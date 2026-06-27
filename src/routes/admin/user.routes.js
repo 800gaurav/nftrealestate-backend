@@ -18,6 +18,7 @@ router.get("/admin-referals", requireAuth(["admin"]), userController.getAdminDir
 router.put("/admin-update-user/:userId", requireAuth(["admin"]), userController.adminUpdateUser)
 router.get("/admin-update-user-history", requireAuth(["admin"]), userController.getAdminUpdateHistory);
 router.put("/update-Roistatus/:userId", requireAuth(["admin"]), userController.stopRoIIncome)
+router.put("/update-Roipercent/:userId", requireAuth(["admin"]), userController.updateRoiPercent)
 router.get("/get-Roistatus/:userId", requireAuth(["admin"]), userController.getRoiInomestatus)
 
 // Admin: update banner

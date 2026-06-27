@@ -10,6 +10,29 @@ const depositSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
+  confirmedAmount: {
+    type: Number,
+    default: 0
+  },
+  purpose: {
+    type: String,
+    enum: ["deposit", "package"],
+    default: "deposit"
+  },
+  packageCode: {
+    type: String
+  },
+  packageTitle: {
+    type: String
+  },
+  packageAmount: {
+    type: Number,
+    default: 0
+  },
+  stakingAmount: {
+    type: Number,
+    default: 0
+  },
   currency: {
     type: String,
     default: "USDT"
@@ -38,6 +61,10 @@ const depositSchema = new mongoose.Schema({
     default: Date.now
   },
   txHash: {
+    type: String,
+
+  },
+  network: {
     type: String,
 
   }

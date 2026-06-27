@@ -1,18 +1,7 @@
 import { UserModel } from "../../models/user.model.js"
 import { buildTree } from "../../utils/build-tree.js";
 import { errorResponse, successResponse } from "../../utils/api-response.js"
-import { countNodes } from "../../utils/count-referrals.js";
-import PLANS from "../../config/plans.js";
-import CommissionHistory from '../../models/comissionhistory.js'
 import mongoose from "mongoose";
-import { calculateDomesticIncome, calculateDomesticIncomeForAllUsers } from "../../incomecalculation/domesticincome.js";
-import { calculateRoyaltyIncome, calculateRoyaltyIncomeForAllUsers } from "../../incomecalculation/royaltyIncome.js";
-import { calculateDailyIncome } from "../../incomecalculation/retunonequity.js";
-import { resetDailyIncomes } from "../../helper/resetdailyincome.js";
-import { duplicateroi } from "../../incomecalculation/duplicateroi.js";
-import { removeDuplicateDomesticIncome } from "../../incomecalculation/removedomesticduplicate.js";
-import { recalculateTotalIncomeForAllUsers } from "../../incomecalculation/updatebalance.js";
-import { updateTodayIncomeFromHistory } from "../../incomecalculation/updatetodayincome.js";
 
 
 
@@ -31,12 +20,59 @@ const profileController = {
     successResponse(res, "Referral Tree fetched successfully", tree); 
   },
 
+  getLeftRightChild: async (req, res) => {
+    try {
+      const { userId } = req.params;
+
+      const query = mongoose.Types.ObjectId.isValid(userId) ? { _id: userId } : { userId };
+      
+      // First find the user
+      const user = await UserModel.findOne(query).select("-password");
+
+      if (!user) {
+        return res.status(404).json({ success: false, message: "User not found" });
+      }
+
+      // Populate leftChild and rightChild
+      const leftChild = user.leftChild
+        ? await UserModel.findById(user.leftChild).select("_id userId name isActivated totalInvested walletBalance leftTeamSp rightTeamSp placementSide leftChild rightChild createdAt")
+        : null;
+
+      const rightChild = user.rightChild
+        ? await UserModel.findById(user.rightChild).select("_id userId name isActivated totalInvested walletBalance leftTeamSp rightTeamSp placementSide leftChild rightChild createdAt")
+        : null;
+
+      const responseData = {
+        _id: user._id,
+        userId: user.userId,
+        name: user.name,
+        isActivated: user.isActivated,
+        totalInvested: user.totalInvested,
+        walletBalance: user.walletBalance,
+        leftTeamSp: user.leftTeamSp,
+        rightTeamSp: user.rightTeamSp,
+        placementSide: user.placementSide,
+        createdAt: user.createdAt,
+        leftChild,
+        rightChild,
+      };
+
+      return res.json({ success: true, data: responseData });
+    } catch (error) {
+      console.error("Tree fetch error:", error);
+      return res.status(500).json({ success: false, message: "Failed to fetch tree" });
+    }
+  },
+
   userdashboarddetails: async (req, res) => {
   try {
     const { userId } = req.params;
 
     // Fetch user with only needed fields
-    const user = await UserModel.findOne({ userId }, '_id name email createdAt isActivated totalDomesticIncome royalyIncome fundBalance rankRewardIncome walletBalance totalInvested proBonusIncome roiIncome royalyIncome totalDomesticIncome todayIncome referralBonus').lean();
+    const user = await UserModel.findOne(
+      { userId },
+      "_id name email createdAt isActivated fundBalance rankRewardIncome walletBalance totalInvested stakingPrincipal roiPercent proBonusIncome roiIncome matchingIncome todayIncome referralBonus leftTeamSp rightTeamSp totalProfitEarned"
+    ).lean();
 
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
@@ -82,9 +118,12 @@ const profileController = {
     const totalTeamMembers = directReferrals + totalDownlineMembers;
     const totalActiveTeamMembers = directActiveReferrals + totalActiveDownlineMembers;
 
-    const registrationIncome = 5;
-    const nonWorkingIncome = registrationIncome + user.roiIncome;
-    const workingIncome = user.proBonusIncome + user.totalDomesticIncome + user.royalyIncome + user.rankRewardIncome;
+    const stakingIncome = user.roiIncome || 0;
+    const sponsorIncome = user.proBonusIncome || 0;
+    const matchingIncome = user.matchingIncome || 0;
+    const rankRewardIncome = user.rankRewardIncome || 0;
+    const workingIncome = sponsorIncome + matchingIncome + rankRewardIncome;
+    const nonWorkingIncome = stakingIncome;
 
     const dashboardData = {
       username: user.name,
@@ -94,27 +133,27 @@ const profileController = {
       fundBalance: user.fundBalance,
       walletBalance: user.walletBalance,
       totalInvested: user.totalInvested,
-      rankRewardIncome: user.rankRewardIncome,
+      stakingPrincipal: user.stakingPrincipal || 0,
+      roiPercent: user.roiPercent || 0.5,
+      rankRewardIncome,
       totalTeamBusiness,
-      royalyIncome: user.royalyIncome,
-      totalDomesticIncome: user.totalDomesticIncome,
+      leftTeamBusiness: user.leftTeamSp || 0,
+      rightTeamBusiness: user.rightTeamSp || 0,
       directReferrals,
       directActiveReferrals,
       totalTeamMembers,
       workingIncome,
       nonWorkingIncome,
       totalActiveTeamMembers,
-      proBonusIncome: user.proBonusIncome,
-      roiIncome: user.roiIncome,
-      royaltyIncome: user.royalyIncome,
-      domesticIncome: user.totalDomesticIncome,
+      sponsorIncome,
+      proBonusIncome: sponsorIncome,
+      stakingIncome,
+      roiIncome: stakingIncome,
+      matchingIncome,
       todayIncome: user.todayIncome,
       totalProfitEarned:
-        (user.proBonusIncome || 0) +
-        (user.roiIncome || 0) +
-        (user.royalyIncome || 0) +
-        (user.totalDomesticIncome || 0) + 
-        (user.rankRewardIncome || 0)
+        user.totalProfitEarned ||
+        sponsorIncome + stakingIncome + matchingIncome + rankRewardIncome
     };
 
     return res.status(200).json({
@@ -226,35 +265,6 @@ probonusIncomehistory: async (req, res) =>{
     res.status(500).json({ success: false, message: "Internal server error" });
   }
 },
-
-runDomesticIncomeCalculation: async (req, res) => {
-  try {
-    const {userId} = req.params
-    const user= await UserModel.findOne({userId})
-    if(!user)res.status(404).json({ success: false, message: "not found user." });
-    // calculateDomesticIncomeForAllUsers()
-    // await calculateDomesticIncomeForAllUsers();
-   await calculateDomesticIncome(user._id)
-    res.status(200).json({ success: true, message: "Domestic income calculated successfully." });
-  } catch (error) {
-    console.error("Error calculating domestic income:", error);
-    res.status(500).json({ success: false, message: "Internal server error." });
-  }
-},
-runRoyaltyIncomeCalculation: async (req, res) => {
-  try {
- const {userId} = req.params
-    const user= await UserModel.findOne({userId})
-    // await calculateRoyaltyIncomeForAllUsers(user_id);
-    await calculateRoyaltyIncome(user._id)
-    res.status(200).json({ success: true, message: "royalty income calculated successfully." });
-  } catch (error) {
-    console.error("Error calculating domestic income:", error);
-    res.status(500).json({ success: false, message: "Internal server error." });
-  }
-},
-
-
 
 // getDownlineLevels: async (req, res) => {
 //   try {
@@ -390,34 +400,6 @@ getDownlineLevels: async (req, res) => {
 },
 
 
-textRioincome: async(req, res) =>{
-  try {
-    await resetDailyIncomes();
-    await calculateDailyIncome();
-    await calculateDomesticIncomeForAllUsers();
-
-    res.status(200).json({ success: true, message: "Rio calculated successfully." });
-  } catch (error) {
-    console.error("Error calculating domestic income:", error);
-    res.status(500).json({ success: false, message: "Internal server error." });
-  }
-},
-
-removeRoiduplicate: async(req, res) =>{
-  try {
-    // await duplicateroi();
-    // await removeDuplicateDomesticIncome();
-    await recalculateTotalIncomeForAllUsers();
-    // await updateTodayIncomeFromHistory();
-
-  
-    res.status(200).json({ success: true, message: "Remove calculated successfully." });
-  } catch (error) {
-    console.error("Error calculating domestic income:", error);
-    res.status(500).json({ success: false, message: "Internal server error." });
-  }
-},
-
 getLevelMembers: async (req, res) => {
   try {
     const { userId } = req.params;
@@ -464,97 +446,6 @@ getLevelMembers: async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 },
-
-getRoyaltyHistory: async(req, res) => {
-try {
-  const user = await UserModel.findById(req.currentUser._id).select('royaltyHistory')
-  
-    if (!user) return res.status(404).json({success: false, message: "User not found",});
-        res.status(200).json({
-      success: true,
-      message: "Royalty History fetched successfully",
-      data: user.royaltyHistory,
-    });
-    
-
-} catch (error) {
-    console.error("Error fetching royalty history:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error", 
-      error
-    });
-}
-},
-
-getROIIncomeHistory: async (req, res) => {
-  try {
-    const user = await UserModel.findById(req.currentUser._id).select('roiIncomeHistory');
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: "ROI income history fetched",
-      data: user.roiIncomeHistory
-    });
-  } catch (err) {
-    console.error("Error fetching ROI income history", err);
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error"
-    });
-  }
-},
-
-getDomesticIncomeHistory: async (req, res) => {
-  try {
-    const { userId } = req.params;
-
-    const user = await UserModel.findOne({ userId });
-    if (!user) {
-      return res.status(404).json({ success: false, message: "User not found" });
-    }
-
-    // Initialize structure for all 20 levels
-    const historyByLevel = {};
-    for (let i = 1; i <= 20; i++) {
-      historyByLevel[i] = {
-        level: i,
-        totalIncome: 0,
-        users: [] // { fromUser, income }
-      };
-    }
-
-    // Process user's domesticIncomeDetails
-    for (const record of user.domesticIncomeDetails) {
-      const lvl = record.level;
-      if (!historyByLevel[lvl]) continue;
-
-      historyByLevel[lvl].totalIncome += record.income;
-      historyByLevel[lvl].users.push({
-        fromUser: record.fromUser || "N/A",
-        income: record.income,
-        username: record.username,
-        date: record.date
-      });
-    }
-
-    return res.json({
-      success: true,
-      userId: user.userId,
-      history: Object.values(historyByLevel) // array format
-    });
-
-  } catch (err) {
-    console.error("Domestic Income History Error:", err);
-    return res.status(500).json({ success: false, message: "Server error" });
-  }
-},
-
-
 
 }
 

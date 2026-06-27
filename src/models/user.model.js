@@ -34,10 +34,23 @@ const userSchema = new mongoose.Schema(
       type: String
     },
     referrer: { type: mongoose.Types.ObjectId, ref: 'User'},
+    placementId: { type: String },
+    placementParent: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    placementSide: { type: String, enum: ["left", "right"], default: null },
+    binaryLevel: { type: Number, default: 0 },
+    referralLevel: { type: Number, default: 0 },
     
     leftChild: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     rightChild: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     directreferaralCount:{type:Number, default: 0},
+    leftTeamSp: { type: Number, default: 0 },
+    rightTeamSp: { type: Number, default: 0 },
+    leftCarry: { type: Number, default: 0 },
+    rightCarry: { type: Number, default: 0 },
+    isBinaryStarted: { type: Boolean, default: false },
+    todaypair: { type: Number, default: 0 },
+    matchingIncome: { type: Number, default: 0 },
+    todayMatchingIncome: { type: Number, default: 0 },
     
     // activation & plan
 
@@ -48,6 +61,8 @@ const userSchema = new mongoose.Schema(
     referralBonus: {type: Boolean, default: false},
     withdrawUnlock: {type: Boolean, default: false},
     totalInvested: { type: Number, default: 0, min: 0 },
+    stakingPrincipal: { type: Number, default: 0, min: 0 },
+    roiPercent: { type: Number, default: 0.5, min: 0.5, max: 1 },
     referralGiven: { type: Boolean, default: false },
     walletBalance: { type: Number, default: 0, min: 0 },
     fundBalance: { type: Number, default: 0, min: 0 },

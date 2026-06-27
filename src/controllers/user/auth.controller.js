@@ -53,9 +53,11 @@ const authController = {
 
   register: async (req, res) => {
     try {
-      const { referrerCode, name, email, phone, password } = req.body;
+      const { referrerCode, name, email, phone, password, side = "left" } = req.body;
       if (!name || !email || !phone || !password || !referrerCode)
         return errorResponse(res, "All fields are required", 400);
+
+      const placementSide = side === "right" ? "right" : "left";
 
       // Check if user already exists
       const isAlreadyExists = await UserModel.findOne({ email });
@@ -76,7 +78,7 @@ const authController = {
       // Save temp data
       await TempUserModel.findOneAndUpdate(
         { email },
-        { name, email, phone, password, referrerCode, otp, otpExpiry },
+        { name, email, phone, password, referrerCode, side: placementSide, otp, otpExpiry },
         { upsert: true, new: true }
       );
 
@@ -104,6 +106,9 @@ const authController = {
       // Sponsor check
       const sponsor = await UserModel.findOne({ referralCode: tempUser.referrerCode });
       if (!sponsor) return errorResponse(res, "Sponsor not found", 404);
+      if (!sponsor.isActivated) return errorResponse(res, "Sponsor not active", 403);
+
+      const placement = await findBinaryPlacement(sponsor, tempUser.side);
 
       // Create user
       const newUser = await UserModel.create({
@@ -113,10 +118,18 @@ const authController = {
         password: tempUser.password, // hash it if not already
         sponsor: sponsor.userId,
         referrer: sponsor._id,
-        referralLevel: sponsor.referralLevel + 1,
+        placementId: placement.parent.userId,
+        placementParent: placement.parent._id,
+        placementSide: placement.side,
+        binaryLevel: placement.binaryLevel,
+        referralLevel: (sponsor.referralLevel || 0) + 1,
     
         
         walletBalance: 5,
+      });
+
+      await UserModel.findByIdAndUpdate(placement.parent._id, {
+        [placement.side === "left" ? "leftChild" : "rightChild"]: newUser._id,
       });
 
 
@@ -188,6 +201,7 @@ const authController = {
     });
 
     successResponse(res, "Logged in successfully", {
+      _id: user._id,
       userId: user.userId,
       name: user.name,
       email: user.email,
@@ -200,6 +214,8 @@ const authController = {
       directreferaralCount: user.directreferaralCount,
       isActivated: user.isActivated,
       totalInvested: user.totalInvested,
+      stakingPrincipal: user.stakingPrincipal,
+      roiPercent: user.roiPercent,
       walletBalance: user.walletBalance,
       mainBalance: user.fundBalance,
       todayIncome: user.todayIncome,
@@ -399,6 +415,8 @@ const authController = {
           directreferaralCount: user.directreferaralCount,
           isActivated: user.isActivated,
           totalInvested: user.totalInvested,
+          stakingPrincipal: user.stakingPrincipal,
+          roiPercent: user.roiPercent,
           walletBalance: user.walletBalance,
           mainBalance: user.fundBalance,
           todayIncome: user.todayIncome,

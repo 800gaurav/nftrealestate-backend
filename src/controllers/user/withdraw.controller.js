@@ -42,8 +42,7 @@ export const requestWithdrawal = async (req, res) => {
     user.withdrawUnlock = true;
     await user.save();
 }
-    if (amount < 10) return errorResponse(res, "Minimum withdrawal amount is $10", 400);
-    if (amount % 10 !== 0) return errorResponse(res, "Amount must be in multiples of $10", 400);
+    if (amount < 5) return errorResponse(res, "Minimum withdrawal amount is $5", 400);
 
     // Find user and balance
 

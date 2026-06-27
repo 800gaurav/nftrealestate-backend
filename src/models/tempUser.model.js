@@ -7,6 +7,7 @@ const TempUserSchema = new mongoose.Schema({
   phone: String,
   password: String,
   referrerCode: String,
+  side: { type: String, enum: ["left", "right"], default: "left" },
   otp: String,
   otpExpiry: Date,
 }, { timestamps: true });

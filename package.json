@@ -5,7 +5,9 @@
   "main": "src/index.js",
   "type": "module",
   "scripts": {
-    "dev": "nodemon src/index.js"
+    "dev": "nodemon src/index.js",
+    "seed:admin": "node createAdmin.js",
+    "seed:users": "node seedDummyUsers.js"
   },
   "keywords": [],
   "author": "",
@@ -30,5 +32,8 @@
     "nodemon": "^3.1.10",
     "tronweb": "^6.0.3",
     "web3": "^4.16.0"
+  },
+  "devDependencies": {
+    "pdf-parse": "^1.1.1"
   }
 }

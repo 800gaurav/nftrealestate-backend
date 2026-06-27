@@ -4,8 +4,8 @@ import { UserModel } from "./src/models/user.model.js";
 
 config();
 
-const ADMIN_EMAIL = "admin@jupiter.com";
-const ADMIN_PASSWORD = "Admin@123";
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const ADMIN_NAME = "Super Admin";
 
 (async () => {
@@ -25,6 +25,7 @@ const ADMIN_NAME = "Super Admin";
       email: ADMIN_EMAIL,
       password: ADMIN_PASSWORD,
       role: "admin",
+      isActivated: true,
     });
 
     console.log("✅ Admin created successfully!");

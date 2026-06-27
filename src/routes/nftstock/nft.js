@@ -3,6 +3,7 @@ import  upload from '../../utils/multer.js';
 import { errorResponse, successResponse } from '../../utils/api-response.js';
 import { requireAuth } from '../../middlewares/require-auth.js';
 import { NftModel } from '../../models/nftstock.model.js';
+import { SERVICE_PLANS } from '../../config/plans.js';
 
 const router = express.Router();
 
@@ -14,15 +15,20 @@ router.post(
     try {
       const { title, description, price } = req.body;
       const imagePath = req.file?.path.replace(/\\/g, '/');
+      const numericPrice = Number(price);
 
-      if (!title || !price || !imagePath) {
+      if (!title || !numericPrice || !imagePath) {
         return errorResponse(res, 'Title, price, and image are required.', 400);
+      }
+
+      if (!SERVICE_PLANS.some(plan => plan.price === numericPrice)) {
+        return errorResponse(res, 'Only $12, $25, $50, and $100 service packages are allowed.', 400);
       }
 
       const nft = await NftModel.create({
         title,
         description,
-        price,
+        price: numericPrice,
         image: imagePath,
       });
 
@@ -64,7 +70,11 @@ router.get(
   requireAuth(['admin', 'user']),
  async (req, res) => {
     try {
+      const allowedPrices = SERVICE_PLANS.map(plan => plan.price);
       const uniquePriceNfts = await NftModel.aggregate([
+        {
+          $match: { price: { $in: allowedPrices } }
+        },
         {
           $sort: { createdAt: -1 } 
         },
@@ -97,6 +107,10 @@ router.get(
     }
   }
 );
+
+router.get('/service-plans', requireAuth(['admin', 'user']), (req, res) => {
+  successResponse(res, 'Service plans fetched successfully', SERVICE_PLANS);
+});
 
 router.get('/show-nft-price-wise',
   requireAuth(['admin', 'user']),

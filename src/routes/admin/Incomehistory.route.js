@@ -3,11 +3,8 @@ import { incomehistoryController } from "../../controllers/admin/incomehistory.c
 import { requireAuth } from "../../middlewares/require-auth.js";
 const router = Router();
 
-router.get("/pro-bonus-history", requireAuth(["admin"]), incomehistoryController.proBonusHistory)
-router.get("/roi-history", requireAuth(["admin"]), incomehistoryController.roihistory)
-router.get("/royalty-history", requireAuth(["admin"]), incomehistoryController.getAllRoyaltyIncomeHistory)
-router.get("/domestic-history", requireAuth(["admin"]), incomehistoryController.getDomesticIncomeHistory)
+router.get("/sponsor-income-history", requireAuth(["admin"]), incomehistoryController.proBonusHistory)
 router.get("/my-downline/:userId", requireAuth(["user", "admin"]), incomehistoryController.getUserNetwork)
+router.get("/user-income-report", requireAuth(["admin"]), incomehistoryController.userIncomeReport)
 
-
-export {router as incomeHistory}
+export { router as incomeHistory }
