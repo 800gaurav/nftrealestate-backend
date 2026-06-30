@@ -21,17 +21,21 @@ const authController = {
     let user = await UserModel.findOne({ email });
     if (user && user.isEmailVerified === true) return errorResponse(res, "Email already in use", 409);
 
-    const newOTP = getRandomOTP(6);
-    if (!user) {
-      user = new UserModel({ email, emailOTP: newOTP });
-    } else {
-      user.emailOTP = newOTP;
-    };
+    try {
+      const newOTP = getRandomOTP(6);
+      if (!user) {
+        user = new UserModel({ email, emailOTP: newOTP });
+      } else {
+        user.emailOTP = newOTP;
+      };
 
-    await sendRegistrationOTP(email, newOTP)
-    await user.save();
-    return successResponse(res, "OTP sent successfully.");
-
+      await sendRegistrationOTP(email, newOTP);
+      await user.save();
+      return successResponse(res, "OTP sent successfully.");
+    } catch (error) {
+      console.error("❌ Error in sendEmailOTP:", error.message);
+      return errorResponse(res, error.message || "Failed to send OTP", 500);
+    }
   },
 
   sendPhoneOTP: async (req, res) => {
