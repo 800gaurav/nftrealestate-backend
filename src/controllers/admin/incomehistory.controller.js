@@ -73,7 +73,7 @@ const incomehistoryController = {
 
       const total = await UserModel.countDocuments(query);
       const users = await UserModel.find(query)
-        .select("userId name email walletBalance roiIncome proBonusIncome matchingIncome rankRewardIncome totalProfitEarned todayIncome totalInvested stakingPrincipal isActivated createdAt")
+        .select("userId name email walletBalance roiIncome proBonusIncome matchingIncome totalProfitEarned todayIncome totalInvested stakingPrincipal isActivated createdAt")
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
@@ -89,12 +89,11 @@ const incomehistoryController = {
         stakingIncome: u.roiIncome || 0,
         sponsorIncome: u.proBonusIncome || 0,
         matchingIncome: u.matchingIncome || 0,
-        rankRewardIncome: u.rankRewardIncome || 0,
+        rankRewardIncome: 0,
         totalIncome:
           (u.roiIncome || 0) +
           (u.proBonusIncome || 0) +
-          (u.matchingIncome || 0) +
-          (u.rankRewardIncome || 0),
+          (u.matchingIncome || 0),
         walletBalance: u.walletBalance || 0,
         todayIncome: u.todayIncome || 0,
         createdAt: u.createdAt,

@@ -1,59 +1,57 @@
-
-import { getAvailableIncome } from "../helper/capping.js";
-import { INCOME_PLAN } from "../config/plans.js";
+import { INCOME_PLAN, SERVICE_PLANS } from "../config/plans.js";
 import { UserModel } from "../models/user.model.js";
 
 const getStakingPrincipal = (user) => {
-    if (Number(user.stakingPrincipal || 0) > 0) return Number(user.stakingPrincipal || 0);
-    return (Number(user.totalInvested || 0) * Number(INCOME_PLAN.joining?.percentOfJoiningAmount || 40)) / 100;
+  if (Number(user.stakingPrincipal || 0) > 0) return Number(user.stakingPrincipal);
+  return (Number(user.totalInvested || 0) * Number(INCOME_PLAN.joining?.percentOfJoiningAmount || 40)) / 100;
 };
 
-// 🆕 ROI based on investment amount slabs
 function getStakingRate(user) {
-    const staking = INCOME_PLAN.staking || {};
-    const minRate = Number(staking.minPercent || 0.5) / 100;
-    const maxRate = Number(staking.maxPercent || 1) / 100;
-    const userRate = Number(user.roiPercent || staking.minPercent || 0.5) / 100;
-    return Math.min(Math.max(userRate, minRate), maxRate);
+  const userRate = Number(user.roiPercent || 0);
+  if (userRate > 0) return userRate / 100;
+
+  if (user.nfts && user.nfts.length > 0) {
+    const lastNft = user.nfts[user.nfts.length - 1];
+    const matchedPlan = SERVICE_PLANS.find(p => Number(p.price) === Number(lastNft.price));
+    if (matchedPlan && matchedPlan.dailyPercent > 0) {
+      return Number(matchedPlan.dailyPercent) / 100;
+    }
+  }
+
+  return 0.5 / 100;
 }
 
 export const calculateDailyIncome = async () => {
-    const users = await UserModel.find({
-        $or: [
-            { stakingPrincipal: { $gt: 0 } },
-            { totalInvested: { $gt: 0 } }
-        ]
-    });
- 
-    
-    for (const user of users) {
-        if (user.stopROIIncome) continue;
-        const stakingPrincipal = getStakingPrincipal(user);
-        if (stakingPrincipal <= 0) continue;
-        const rate = getStakingRate(user);
-        
-        const todayIncome = stakingPrincipal * rate;
+  const users = await UserModel.find({
+    $or: [{ stakingPrincipal: { $gt: 0 } }, { totalInvested: { $gt: 0 } }],
+  });
 
-        // ✅ Cap check
-        const available = await getAvailableIncome(user._id, "nonWorking");
-        if (available <= 0) {
-            user.stopROIIncome = true;
-            await user.save();
-            continue;
-        }
+  for (const user of users) {
+    if (user.stopROIIncome) continue;
 
-        const addableIncome = Math.min(todayIncome, available);
+    const stakingPrincipal = getStakingPrincipal(user);
+    if (stakingPrincipal <= 0) continue;
 
-        user.todayIncome += addableIncome;
-        user.walletBalance += addableIncome;
-        user.roiIncome += addableIncome;
-        user.totalProfitEarned = (user.totalProfitEarned || 0) + addableIncome;
-
-        user.roiIncomeHistory.push({
-            date: new Date(),
-            amount: addableIncome
-        });
-
-         await user.save();
+    // Staking cap: total roiIncome must not exceed stakingPrincipal (40% of package)
+    const alreadyEarned = Number(user.roiIncome || 0);
+    if (alreadyEarned >= stakingPrincipal) {
+      user.stopROIIncome = true;
+      await user.save();
+      continue;
     }
+
+    const rate = getStakingRate(user);
+    const todayIncome = stakingPrincipal * rate;
+    // Don't exceed the cap
+    const addableIncome = Math.min(todayIncome, stakingPrincipal - alreadyEarned);
+
+    user.todayIncome = (user.todayIncome || 0) + addableIncome;
+    user.walletBalance = (user.walletBalance || 0) + addableIncome;
+    user.roiIncome = alreadyEarned + addableIncome;
+    user.totalProfitEarned = (user.totalProfitEarned || 0) + addableIncome;
+
+    user.roiIncomeHistory.push({ date: new Date(), amount: addableIncome });
+
+    await user.save();
+  }
 };

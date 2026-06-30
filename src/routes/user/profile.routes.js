@@ -2,6 +2,7 @@ import { Router } from "express";
 
 import { requireAuth } from "../../middlewares/require-auth.js";
 import { profileController } from "../../controllers/user/profile.controller.js";
+import { getUserRank } from "../../incomecalculation/rewardIncome.js";
 
 
 const router = Router();
@@ -14,6 +15,7 @@ router.get("/get-left-right-user/:userId",requireAuth(["user", "admin"]), profil
 router.get("/get-level-members/:userId",requireAuth(["user", "admin"]), profileController.getLevelMembers)
 // router.post("/main-to-fund-transfer/:userId",requireAuth(["user", "admin"]), profileController.mainTofundtransfer)
 router.get("/user-dashboard/:userId",requireAuth(["user", "admin"]), profileController.userdashboarddetails);
+router.get("/user-rank/:userId", requireAuth(["user", "admin"]), getUserRank);
 
 
 

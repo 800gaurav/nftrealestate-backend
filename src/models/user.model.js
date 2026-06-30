@@ -62,10 +62,19 @@ const userSchema = new mongoose.Schema(
     withdrawUnlock: {type: Boolean, default: false},
     totalInvested: { type: Number, default: 0, min: 0 },
     stakingPrincipal: { type: Number, default: 0, min: 0 },
-    roiPercent: { type: Number, default: 0.5, min: 0.5, max: 1 },
+    roiPercent: { type: Number, default: 0.5, min: 0 },
     referralGiven: { type: Boolean, default: false },
     walletBalance: { type: Number, default: 0, min: 0 },
     fundBalance: { type: Number, default: 0, min: 0 },
+   fundWalletHistory: [
+     {
+       type: { type: String, enum: ["credit", "debit"], required: true },
+       amount: { type: Number, required: true },
+       note: { type: String, default: "" },
+       balanceAfter: { type: Number },
+       date: { type: Date, default: Date.now },
+     }
+   ],
     todayIncome: {type: Number, default: 0},
     roiIncome: {type: Number, default: 0},
     totalProfitEarned: { type: Number, default: 0 },
@@ -127,6 +136,9 @@ rankRewardHistory: [
   }
 ],
 claimedRankRewards: [{ type: Number }], // list of thresholds already claimed, e.g. [10000,25000]
+
+currentRank: { type: String, default: null },
+teamBusiness: { type: Number, default: 0 },
 
 royaltyHistory: [ 
   {

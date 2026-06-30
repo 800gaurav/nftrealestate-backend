@@ -20,8 +20,13 @@ router.get("/admin-update-user-history", requireAuth(["admin"]), userController.
 router.put("/update-Roistatus/:userId", requireAuth(["admin"]), userController.stopRoIIncome)
 router.put("/update-Roipercent/:userId", requireAuth(["admin"]), userController.updateRoiPercent)
 router.get("/get-Roistatus/:userId", requireAuth(["admin"]), userController.getRoiInomestatus)
+router.post("/add-fund-balance/:userId", requireAuth(["admin"]), userController.addFundBalance)
+router.get("/fund-wallet-history/:userId", requireAuth(["admin"]), userController.getFundWalletHistory)
 
-// Admin: update banner
+router.post("/run-income-job", requireAuth(["admin"]), userController.runDailyJobManually)
+
+router.get("/get-plans", requireAuth(["admin"]), userController.getPlans)
+router.put("/update-plans", requireAuth(["admin"]), userController.updatePlans)
 router.post("/update-banner", requireAuth(["admin"]), updateBanner);
 
 // User: get active banner

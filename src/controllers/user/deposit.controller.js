@@ -5,30 +5,57 @@ import { successResponse, errorResponse } from "../../utils/api-response.js";
 import { OXAPAY_MERCHANT_KEY } from "../../config/index.js";
 import { getUplines } from "../../helper/getUpLines.js";
 import { evaluateAndApplyRankReward } from "../../incomecalculation/rewardIncome.js";
+import { updateBinaryBusinessAndMatching } from "../../incomecalculation/matchingIncome.js";
 import { INCOME_PLAN, SERVICE_PLANS } from "../../config/plans.js";
 
 const round2 = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+
+const creditSponsorIncome = async ({ user, packageAmount, orderId }) => {
+  if (!user?.referrer) return;
+
+  const referralPercent = Number(INCOME_PLAN.sponsor?.percent || 0);
+  if (referralPercent <= 0) return;
+
+  const referralIncome = round2((Number(packageAmount || 0) * referralPercent) / 100);
+  if (referralIncome <= 0) return;
+
+  const depositorCode = user.userId || String(user._id);
+  await UserModel.findOneAndUpdate(
+    { _id: user.referrer },
+    {
+      $inc: {
+        totalProfitEarned: referralIncome,
+        proBonusIncome: referralIncome,
+        walletBalance: referralIncome,
+        todayIncome: referralIncome,
+      },
+      $push: {
+        proBonusHistory: {
+          fromUser: depositorCode,
+          baseAmount: packageAmount,
+          amount: referralIncome,
+          date: new Date(),
+          orderId,
+        },
+      },
+    }
+  );
+};
 
 const getPackageFromRequest = ({ packageCode, amount }) => {
   if (packageCode) {
     return SERVICE_PLANS.find((plan) => plan.code === packageCode);
   }
-
   const numericAmount = Number(amount);
   return SERVICE_PLANS.find((plan) => Number(plan.price) === numericAmount);
 };
 
-
 export const getDepositHistory = async (req, res) => {
   try {
     const { userId } = req.params;
-
-    const user = await UserModel.findOne({ userId }); // custom userId
+    const user = await UserModel.findOne({ userId });
     if (!user) return errorResponse(res, "User not found", 404);
-
-    const deposits = await DepositModel.find({ userId: user._id })
-      .sort({ date: -1 });
-
+    const deposits = await DepositModel.find({ userId: user._id }).sort({ date: -1 });
     return successResponse(res, "Deposit history fetched", deposits);
   } catch (err) {
     console.error("Deposit history error:", err);
@@ -45,7 +72,6 @@ export const getAllDepositHistory = async (req, res) => {
     const result = deposits.map(dep => ({
       _id: dep._id,
       userId: dep.userId?.userId || "",
-      // username: dep.userId?.username || "",
       email: dep.userId?.email || "",
       coin: dep.coin,
       amount: dep.amount,
@@ -62,16 +88,13 @@ export const getAllDepositHistory = async (req, res) => {
   }
 };
 
-// controllers/paymentController.js
 export const initiatePayment = async (req, res) => {
-
   try {
-    const { amount, packageCode } = req.body;
+    const { amount, packageCode, payFromFundWallet } = req.body;
     const currentUser = req.currentUser;
 
-    console.log(amount)
     if (!amount || !currentUser) {
-      return res.status(400).json({ error: 'Amount and user are required.' });
+      return res.status(400).json({ error: "Amount and user are required." });
     }
 
     const selectedPackage = getPackageFromRequest({ packageCode, amount });
@@ -84,22 +107,51 @@ export const initiatePayment = async (req, res) => {
 
     const packageAmount = Number(selectedPackage.price);
     const stakingAmount = round2((packageAmount * Number(INCOME_PLAN.joining.percentOfJoiningAmount || 40)) / 100);
+    const planDailyPercent = Number(selectedPackage.dailyPercent || 0.5);
 
-    const user = await UserModel.findOne({ _id: currentUser._id })
-    const orderid = `ORD-${Date.now()}`
+    const user = await UserModel.findOne({ _id: currentUser._id });
+
+    // --- Fund Wallet Flow ---
+    if (payFromFundWallet) {
+      if (user.fundBalance < packageAmount) {
+        return res.status(400).json({ success: false, message: "Insufficient Fund Wallet balance." });
+      }
+
+      user.fundBalance -= packageAmount;
+      user.fundWalletHistory = user.fundWalletHistory || [];
+      user.fundWalletHistory.push({
+        type: "debit",
+        amount: packageAmount,
+        note: `Package purchase: ${selectedPackage.title || selectedPackage.code}`,
+        balanceAfter: user.fundBalance,
+        date: new Date(),
+      });
+      user.totalInvested += packageAmount;
+      user.stakingPrincipal += stakingAmount;
+      user.roiPercent = planDailyPercent;
+      user.stopROIIncome = false;
+      user.isActivated = true;
+      await user.save();
+      await updateBinaryBusinessAndMatching(user._id, packageAmount);
+      await creditSponsorIncome({ user, packageAmount, orderId: `fund-wallet-${Date.now()}` });
+
+      return res.status(200).json({ success: true, message: "Package purchased successfully from Fund Wallet." });
+    }
+
+    // --- OxaPay Flow ---
+    const orderid = `ORD-${Date.now()}`;
     const response = await axios.post(
-      'https://api.oxapay.com/v1/payment/invoice',
+      "https://api.oxapay.com/v1/payment/invoice",
       {
         amount: packageAmount,
         currency: "USD",
         lifetime: 15,
-
         under_paid_coverage: 2.5,
         to_currency: "USDT",
         auto_withdrawal: false,
         mixed_payment: true,
         callback_url: "https://backend.jupitertoken.us/api/v1/user/oxapay/payment/callback",
-        return_url: "https://backend.jupitertoken.us/api/v1/user/oxapay/payment/return",  // redirect after payment
+        return_url: "https://backend.jupitertoken.us/api/v1/user/oxapay/payment/return",
         email: user.email,
         order_id: orderid,
         thanks_message: "",
@@ -108,34 +160,32 @@ export const initiatePayment = async (req, res) => {
       },
       {
         headers: {
-          'merchant_api_key': OXAPAY_MERCHANT_KEY,
-          'Content-Type': 'application/json'
+          "merchant_api_key": OXAPAY_MERCHANT_KEY,
+          "Content-Type": "application/json"
         }
       }
     );
-    const saveHistory = await DepositModel.create({
+
+    await DepositModel.create({
       userId: currentUser._id,
       amount: packageAmount,
-      currency: 'USDT',
+      currency: "USDT",
       orderId: orderid,
       purpose: "package",
       packageCode: selectedPackage.code,
       packageTitle: selectedPackage.title,
       packageAmount,
       stakingAmount,
-      status: 'pending'
-    })
-    console.log(saveHistory)
-
-    return res.status(200).json({
-      success: true,
-      data: response.data
+      planDailyPercent,
+      status: "pending"
     });
+
+    return res.status(200).json({ success: true, data: response.data });
   } catch (error) {
-    console.error('Payment initiation error:', error?.response?.data || error.message);
+    console.error("Payment initiation error:", error?.response?.data || error.message);
     return res.status(500).json({
       success: false,
-      message: 'Failed to initiate payment',
+      message: "Failed to initiate payment",
       error: error?.response?.data || error.message
     });
   }
@@ -144,42 +194,30 @@ export const initiatePayment = async (req, res) => {
 export const oxapayCallback = async (req, res) => {
   try {
     const data = req.body;
-
     const { order_id, status, txs } = data;
-    console.log("orderid", order_id)
     const transaction = txs?.[0] || {};
 
-    console.log('🔔 Callback received:', order_id, status);
+    console.log("🔔 Callback received:", order_id, status);
 
     if (!order_id || !transaction) {
-      return res.status(400).send('Invalid data');
+      return res.status(400).send("Invalid data");
     }
 
+    let newStatus = "pending";
+    if (status === "Paid") newStatus = "success";
+    else if (status === "Paying") newStatus = "paying";
 
-    //--------------------------------------------------------------------------------------------
-
-    // Map Oxapay status to internal DB status
-    let newStatus = 'pending';
-    if (status === 'Paid') newStatus = 'success';
-    else if (status === 'Paying') newStatus = 'paying';
-
-    // 1️⃣ Pehle record find kar
     const existingDeposit = await DepositModel.findOne({ orderId: order_id });
-
     if (!existingDeposit) {
       console.log(`⚠️ No payment record found with txnId: ${order_id}`);
       return res.status(400).send("Invalid order");
     }
 
-    // 2️⃣ Agar already success ho chuka hai -> skip
     if (existingDeposit.status === "success") {
       console.log(`⏭️ Payment ${order_id} already processed, skipping...`);
       return res.status(200).send("ok");
     }
 
-
-
-    // 3️⃣ Ab update kar DB me status
     existingDeposit.status = newStatus;
     existingDeposit.confirmedAmount = transaction.sent_amount;
     existingDeposit.txHash = transaction.tx_hash;
@@ -187,22 +225,22 @@ export const oxapayCallback = async (req, res) => {
     existingDeposit.updatedAt = new Date();
     await existingDeposit.save();
 
-    // 4️⃣ Fund update sirf tab jab pehli baar success hua ho
-    if (newStatus === 'success' && existingDeposit?.userId) {
+    if (newStatus === "success" && existingDeposit?.userId) {
       const paidAmount = Number(transaction.fiat_amount || transaction.price_amount || transaction.sent_amount || existingDeposit.amount || 0);
       const packageAmount = Number(existingDeposit.packageAmount || existingDeposit.amount || paidAmount);
       const stakingAmount = Number(
         existingDeposit.stakingAmount ||
         round2((packageAmount * Number(INCOME_PLAN.joining.percentOfJoiningAmount || 40)) / 100)
       );
+      const matchedPackage = SERVICE_PLANS.find(
+        (plan) => plan.code === existingDeposit.packageCode || Number(plan.price) === packageAmount
+      );
+      const planDailyPercent = Number(existingDeposit.planDailyPercent || matchedPackage?.dailyPercent || 0.5);
       const isPackagePayment = existingDeposit.purpose === "package";
       const update = isPackagePayment
         ? {
-            $inc: {
-              totalInvested: packageAmount,
-              stakingPrincipal: stakingAmount
-            },
-            $set: { isActivated: true }
+            $inc: { totalInvested: packageAmount, stakingPrincipal: stakingAmount, walletBalance: stakingAmount },
+            $set: { isActivated: true, stopROIIncome: false, roiPercent: planDailyPercent }
           }
         : {
             $inc: { fundBalance: paidAmount },
@@ -216,70 +254,31 @@ export const oxapayCallback = async (req, res) => {
       );
 
       if (updatedUser) {
-        console.log(`💰 User ${updatedUser._id} totalInvested updated: +${transaction.sent_amount}`);
-
-        // ✅ Upline rank reward check karna yahi pe karein
-        const uplines = await getUplines(updatedUser._id, 20);
-        for (const uplineId of uplines) {
-          await evaluateAndApplyRankReward(uplineId); // 🔥 call reward calculator
+        console.log(`💰 User ${updatedUser._id} updated: +${transaction.sent_amount}`);
+        if (isPackagePayment) {
+          await updateBinaryBusinessAndMatching(updatedUser._id, packageAmount);
         }
 
-        //-------------------------------------------------------------------------------------------
-        // const depositCount = await DepositModel.countDocuments({
-        //   userId: updatedUser._id,
-        //   status: 'success'
-        // });
+        const uplines = await getUplines(updatedUser._id, 20);
+        for (const uplineId of uplines) {
+          await evaluateAndApplyRankReward(uplineId);
+        }
 
-        // Referral should only apply on FIRST successful deposit
-        if (isPackagePayment && !updatedUser.referralGiven && updatedUser.referrer) {
-
-          const amt = packageAmount;
-          const referralPercent = INCOME_PLAN.sponsor.percent;
-
-          if (referralPercent > 0) {
-            const referralIncome = (amt * referralPercent) / 100;
-            const depositorCode = updatedUser.userId || String(updatedUser._id);
-
-            await UserModel.findOneAndUpdate(
-              { _id: updatedUser.referrer },
-              {
-                $inc: {
-                  totalProfitEarned: referralIncome,
-                  proBonusIncome: referralIncome,
-                  walletBalance: referralIncome,
-                  todayIncome: referralIncome
-                },
-                $push: {
-                  proBonusHistory: {
-                    fromUser: depositorCode,
-                    baseAmount: amt,
-                    amount: referralIncome,
-                    date: new Date(),
-                    orderId: order_id
-                  }
-                }
-              }
-            );
-            updatedUser.referralGiven = true;
-            await updatedUser.save();
-          }
+        if (isPackagePayment) {
+          await creditSponsorIncome({ user: updatedUser, packageAmount, orderId: order_id });
         }
       }
     }
 
     return res.status(200).send("ok");
   } catch (error) {
-    console.error('❌ Callback error:', error.message);
-    return res.status(500).json({ success: false, message: 'Callback handling failed' });
+    console.error("❌ Callback error:", error.message);
+    return res.status(500).json({ success: false, message: "Callback handling failed" });
   }
 };
 
-
-
 export const oxapayReturn = (req, res) => {
-  // Oxapay may append query params to this URL like ?order_id=123&status=success
   const { order_id, status } = req.query;
-
   return res.send(`
     <html>
       <body>

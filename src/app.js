@@ -36,7 +36,7 @@ app.use(express.json());
 // Set authorization token if the bearer token is provided
 app.use(currentUser);
 
-app.get("/", (req, res) => res.send("Jupiter backend is running..."))
+app.get("/", (req, res) => res.send("backend is running..."))
 
 // USER ROUTES
 app.use("/api/v1/user/auth", userAuthRouter);

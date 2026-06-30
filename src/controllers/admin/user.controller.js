@@ -1,4 +1,4 @@
-import { JWT_EXPIRE, JWT_SECRET } from "../../config/index.js";
+﻿import { JWT_EXPIRE, JWT_SECRET } from "../../config/index.js";
 import { UserModel } from "../../models/user.model.js";
 import { WithdrawModel } from "../../models/withdraw.model.js";
 import AdminUpdateHistory from "../../models/addedbyadminhistory.js";
@@ -8,6 +8,7 @@ import jwt from "jsonwebtoken";
 import dayjs from "dayjs";
 import bcrypt from "bcryptjs";
 import { INCOME_PLAN } from "../../config/plans.js";
+import { RANK_TIERS } from "../../incomecalculation/rewardIncome.js";
 
 const userController = {
   getUsers: async (req, res) => {
@@ -159,7 +160,7 @@ const userController = {
           totalStakingIncome: s(totalStakingAgg),
           totalSponsorIncome: s(totalSponsorAgg),
           totalMatchingIncome: s(totalMatchingAgg),
-          totalRankRewardIncome: s(totalRankRewardAgg),
+          totalRankRewardIncome: 0,
           pendingWithdrawals,
           totalWithdrawn: s(totalWithdrawnAgg),
         },
@@ -198,21 +199,32 @@ const userController = {
 
   investHistory: async (req, res) => {
     try {
-      const users = await UserModel.find({ "nfts.0": { $exists: true } }).select("name nfts");
-      const allPurchases = [];
-      users.forEach((user) => {
-        user.nfts.forEach((nft) => {
-          allPurchases.push({
-            userName: user.name,
-            price: nft.price,
-            profitEarned: nft.profitEarned,
-            purchasedAt: nft.purchasedAt,
-          });
-        });
-      });
-      res.status(200).json({ message: "All NFT purchases fetched successfully", total: allPurchases.length, data: allPurchases });
+      const { DepositModel } = await import('../../models/deposit.model.js')
+
+      // Fetch oxpay deposits (package payments)
+      const deposits = await DepositModel.find()
+        .populate({ path: 'userId', select: 'name userId' })
+        .sort({ date: -1 })
+        .lean()
+
+      const result = deposits.map(dep => ({
+        userName:     dep.userId?.name   || 'â€”',
+        userId:       dep.userId?.userId || 'â€”',
+        packageTitle: dep.packageTitle   || dep.purpose || 'â€”',
+        packageCode:  dep.packageCode    || 'â€”',
+        amount:       dep.amount,
+        stakingAmount: dep.stakingAmount || 0,
+        currency:     dep.currency       || 'USDT',
+        orderId:      dep.orderId        || 'â€”',
+        txHash:       dep.txHash         || 'â€”',
+        network:      dep.network        || 'â€”',
+        status:       dep.status,
+        purchasedAt:  dep.date,
+      }))
+
+      res.status(200).json({ message: 'Invest history fetched', total: result.length, data: result })
     } catch (err) {
-      res.status(500).json({ message: "Error fetching NFT purchases", error: err.message });
+      res.status(500).json({ message: 'Error fetching invest history', error: err.message })
     }
   },
 
@@ -246,6 +258,7 @@ const userController = {
       if (totalInvested && user.totalInvested !== totalInvested) {
         changes.totalInvested = { oldValue: user.totalInvested, newValue: totalInvested };
         user.totalInvested = totalInvested;
+        user.stopROIIncome = false;
         if (!user.referralGiven && user.referrer) {
           const referralPercent = INCOME_PLAN.sponsor.percent;
           if (referralPercent > 0) {
@@ -270,7 +283,7 @@ const userController = {
 
       if (roiPercent !== undefined && user.roiPercent !== Number(roiPercent)) {
         const newRoiPercent = Number(roiPercent);
-        if (newRoiPercent < 0.5 || newRoiPercent > 1) return errorResponse(res, "ROI percent must be between 0.5 and 1", 400);
+        if (Number.isNaN(newRoiPercent) || newRoiPercent < 0) return errorResponse(res, "Staking income percent must be 0 or higher", 400);
         changes.roiPercent = { oldValue: user.roiPercent, newValue: newRoiPercent };
         user.roiPercent = newRoiPercent;
       }
@@ -278,7 +291,20 @@ const userController = {
       if (phone && user.phone !== phone) { changes.phone = { oldValue: user.phone, newValue: phone }; user.phone = phone; }
       if (email && user.email !== email) { changes.email = { oldValue: user.email, newValue: email }; user.email = email; }
       if (walletBalance !== undefined && user.walletBalance !== walletBalance) { changes.walletBalance = { oldValue: user.walletBalance, newValue: walletBalance }; user.walletBalance = walletBalance; }
-      if (fundBalance !== undefined && user.fundBalance !== fundBalance) { changes.fundBalance = { oldValue: user.fundBalance, newValue: fundBalance }; user.fundBalance = fundBalance; }
+      if (fundBalance !== undefined && user.fundBalance !== Number(fundBalance)) {
+        const oldFund = user.fundBalance;
+        const newFund = Number(fundBalance);
+        changes.fundBalance = { oldValue: oldFund, newValue: newFund };
+        user.fundWalletHistory = user.fundWalletHistory || [];
+        user.fundWalletHistory.push({
+          type: newFund >= oldFund ? "credit" : "debit",
+          amount: Math.abs(newFund - oldFund),
+          note: "Admin manual update",
+          balanceAfter: newFund,
+          date: new Date(),
+        });
+        user.fundBalance = newFund;
+      }
       if (txnpass && user.txnpass !== txnpass) { changes.txnpass = { oldValue: user.txnpass, newValue: txnpass }; user.txnpass = txnpass; }
       if (password) { changes.password = { oldValue: "********", newValue: "********" }; user.password = password; }
       if (typeof isActivated === "boolean") user.isActivated = isActivated;
@@ -333,8 +359,8 @@ const userController = {
     try {
       const { userId } = req.params;
       const newRoiPercent = Number(req.body.roiPercent);
-      if (Number.isNaN(newRoiPercent) || newRoiPercent < 0.5 || newRoiPercent > 1)
-        return errorResponse(res, "ROI percent must be between 0.5 and 1", 400);
+      if (Number.isNaN(newRoiPercent) || newRoiPercent < 0)
+        return errorResponse(res, "Staking income percent must be 0 or higher", 400);
       const user = await UserModel.findOne({ userId });
       if (!user) return errorResponse(res, "User not found", 404);
       user.roiPercent = newRoiPercent;
@@ -342,6 +368,70 @@ const userController = {
       return successResponse(res, "ROI percent updated successfully", { userId: user.userId, roiPercent: user.roiPercent });
     } catch (error) {
       return res.status(500).json({ success: false, message: "Internal server error", error });
+    }
+  },
+
+  getPlans: async (req, res) => {
+    try {
+      const { SERVICE_PLANS, INCOME_PLAN } = await import('../../config/plans.js')
+      return successResponse(res, 'Plans fetched', { plans: SERVICE_PLANS, incomePlan: INCOME_PLAN, rewardRanks: RANK_TIERS })
+    } catch (e) {
+      return errorResponse(res, 'Failed to fetch plans')
+    }
+  },
+
+  updatePlans: async (req, res) => {
+    try {
+      const { plans, incomePlan } = req.body
+      const normalizedIncomePlan = {
+        ...incomePlan,
+        staking: {
+          name: 'Staking Income',
+          note: incomePlan?.staking?.note || 'Daily staking income comes from each package dailyPercent.',
+        },
+      }
+      const normalizedPlans = (plans || []).map((plan) => ({
+        ...plan,
+        dailyPercent: Number(plan.dailyPercent || 0),
+        dailyROI: plan.dailyROI || `${Number(plan.dailyPercent || 0)}%`,
+      }))
+      // Write updated plans back to plans.js config file
+      const fs = await import('fs')
+      const path = await import('path')
+      const { fileURLToPath } = await import('url')
+      const __dirname = path.dirname(fileURLToPath(import.meta.url))
+      const plansPath = path.resolve(__dirname, '../../config/plans.js')
+
+      const content = `const SERVICE_PLANS = ${JSON.stringify(normalizedPlans, null, 2)};
+
+const INCOME_PLAN = ${JSON.stringify(normalizedIncomePlan, null, 2)};
+
+const REWARD_RANKS = ${JSON.stringify(RANK_TIERS, null, 2)};
+
+const SERVICES = [
+  "Real Estate Services", "Property Investment", "Property Management",
+  "NFT Real Estate", "Digital Asset Services", "E-Commerce",
+  "Tour & Travel", "Banking Services", "Education Services",
+  "Insurance Services", "Job Services", "Trading Services",
+  "Agriculture Services", "Health Services", "Business Consulting",
+];
+
+const PLANS = { servicePlans: SERVICE_PLANS, services: SERVICES, incomePlan: INCOME_PLAN, rewardRanks: REWARD_RANKS };
+
+export default PLANS;
+export { SERVICE_PLANS, SERVICES, INCOME_PLAN, REWARD_RANKS };
+`
+      fs.writeFileSync(plansPath, content, 'utf8')
+
+      const configModule = await import('../../config/plans.js')
+      configModule.SERVICE_PLANS.splice(0, configModule.SERVICE_PLANS.length, ...normalizedPlans)
+      Object.keys(configModule.INCOME_PLAN).forEach((key) => delete configModule.INCOME_PLAN[key])
+      Object.assign(configModule.INCOME_PLAN, normalizedIncomePlan)
+
+      return successResponse(res, 'Plans updated successfully')
+    } catch (e) {
+      console.error('updatePlans error:', e)
+      return errorResponse(res, 'Failed to update plans')
     }
   },
 
@@ -355,6 +445,66 @@ const userController = {
       return res.status(500).json({ success: false, message: "Internal server error", error });
     }
   },
+
+  addFundBalance: async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { amount, note } = req.body;
+      const parsedAmount = Number(amount);
+      if (!parsedAmount || parsedAmount <= 0) return errorResponse(res, "Valid amount is required", 400);
+      const user = await UserModel.findOne({ userId });
+      if (!user) return errorResponse(res, "User not found", 404);
+      const oldBalance = user.fundBalance;
+      user.fundBalance += parsedAmount;
+      user.fundWalletHistory = user.fundWalletHistory || [];
+      user.fundWalletHistory.push({
+        type: "credit",
+        amount: parsedAmount,
+        note: note || "Admin credit",
+        balanceAfter: user.fundBalance,
+        date: new Date(),
+      });
+      await logAdminUpdateHistory(userId, {
+        fundBalance: { oldValue: oldBalance, newValue: user.fundBalance },
+      });
+      await user.save();
+      return successResponse(res, "Fund balance added successfully", { fundBalance: user.fundBalance });
+    } catch (error) {
+      return errorResponse(res, "Internal Server Error");
+    }
+  },
+
+  getFundWalletHistory: async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const user = await UserModel.findOne({ userId }).select("fundBalance fundWalletHistory userId name");
+      if (!user) return errorResponse(res, "User not found", 404);
+      return successResponse(res, "Fund wallet history fetched", {
+        fundBalance: user.fundBalance,
+        history: (user.fundWalletHistory || []).slice().reverse(),
+      });
+    } catch (error) {
+      return errorResponse(res, "Internal Server Error");
+    }
+  },
+
+  runDailyJobManually: async (req, res) => {
+    try {
+      const { resetDailyIncomes } = await import('../../helper/resetdailyincome.js')
+      const { calculateDailyIncome } = await import('../../incomecalculation/retunonequity.js')
+      const { evaluateAllUsersRankRewards } = await import('../../incomecalculation/rewardIncome.js')
+
+      await resetDailyIncomes()
+      await calculateDailyIncome()
+      await evaluateAllUsersRankRewards()
+
+      return successResponse(res, 'Daily income job executed successfully')
+    } catch (error) {
+      console.error('Manual income job error:', error)
+      return errorResponse(res, 'Failed to run income job: ' + error.message)
+    }
+  },
 };
 
 export { userController };
+

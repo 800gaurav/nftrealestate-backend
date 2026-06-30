@@ -71,7 +71,7 @@ const profileController = {
     // Fetch user with only needed fields
     const user = await UserModel.findOne(
       { userId },
-      "_id name email createdAt isActivated fundBalance rankRewardIncome walletBalance totalInvested stakingPrincipal roiPercent proBonusIncome roiIncome matchingIncome todayIncome referralBonus leftTeamSp rightTeamSp totalProfitEarned"
+      "_id name email createdAt isActivated fundBalance walletBalance totalInvested stakingPrincipal roiPercent proBonusIncome roiIncome matchingIncome todayIncome referralBonus leftTeamSp rightTeamSp totalProfitEarned roiIncomeHistory proBonusHistory sponsor currentRank teamBusiness"
     ).lean();
 
     if (!user) {
@@ -121,8 +121,8 @@ const profileController = {
     const stakingIncome = user.roiIncome || 0;
     const sponsorIncome = user.proBonusIncome || 0;
     const matchingIncome = user.matchingIncome || 0;
-    const rankRewardIncome = user.rankRewardIncome || 0;
-    const workingIncome = sponsorIncome + matchingIncome + rankRewardIncome;
+    const rankRewardIncome = 0;
+    const workingIncome = sponsorIncome + matchingIncome;
     const nonWorkingIncome = stakingIncome;
 
     const dashboardData = {
@@ -136,6 +136,7 @@ const profileController = {
       stakingPrincipal: user.stakingPrincipal || 0,
       roiPercent: user.roiPercent || 0.5,
       rankRewardIncome,
+      currentRank: user.currentRank || null,
       totalTeamBusiness,
       leftTeamBusiness: user.leftTeamSp || 0,
       rightTeamBusiness: user.rightTeamSp || 0,
@@ -153,7 +154,10 @@ const profileController = {
       todayIncome: user.todayIncome,
       totalProfitEarned:
         user.totalProfitEarned ||
-        sponsorIncome + stakingIncome + matchingIncome + rankRewardIncome
+        sponsorIncome + stakingIncome + matchingIncome,
+      roiIncomeHistory: user.roiIncomeHistory || [],
+      proBonusHistory: user.proBonusHistory || [],
+      sponsor: user.sponsor || null,
     };
 
     return res.status(200).json({

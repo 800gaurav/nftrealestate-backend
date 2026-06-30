@@ -1,194 +1,113 @@
-// services/rankReward.service.js
-import mongoose from "mongoose";
-import { UserModel } from "../models/user.model.js";
-import { getDownlineByLevels } from "../utils/downlineMember.js";
-import { errorResponse, successResponse } from "../utils/api-response.js";
-import { getAvailableIncome } from "../helper/capping.js";
+﻿import { UserModel } from "../models/user.model.js";
+import { successResponse, errorResponse } from "../utils/api-response.js";
 
-
-const REWARD_TIERS = [
-  { threshold: 10000, reward: 50 },
-  { threshold: 25000, reward: 100 },
-  { threshold: 50000, reward: 200 },
-  { threshold: 100000, reward: 500 },
-  { threshold: 200000, reward: 1200 },
-  { threshold: 500000, reward: 2500 },
+export const RANK_TIERS = [
+  { level: "1st", rank: "Bronze", business: 1000, reward: "Welcome Kit" },
+  { level: "2nd", rank: "Silver", business: 5000, reward: "Android Mobile" },
+  { level: "3rd", rank: "Gold", business: 20000, reward: "Bangkok Tour" },
+  { level: "4th", rank: "Diamond", business: 50000, reward: "Thailand 3N/4 Day + Car + Foreign D/P" },
+  { level: "5th", rank: "Crown", business: 100000, reward: "Fortuner" },
+  { level: "6th", rank: "Ambassador", business: 500000, reward: "2% Royalty T/C" },
 ];
 
-const BUSINESS_FIELD = "totalInvested"; // <--- change if you use different field
+const getTeamBusiness = async (userId) => {
+  let total = 0;
+  let currentLevelIds = [userId];
+
+  for (let level = 1; level <= 20; level += 1) {
+    const downline = await UserModel.find(
+      { referrer: { $in: currentLevelIds } },
+      "_id totalInvested"
+    ).lean();
+
+    if (downline.length === 0) break;
+    total += downline.reduce((sum, user) => sum + Number(user.totalInvested || 0), 0);
+    currentLevelIds = downline.map((user) => user._id);
+  }
+
+  return total;
+};
+
+export const getRankForBusiness = (teamBusiness) => {
+  let currentRank = null;
+  for (const tier of RANK_TIERS) {
+    if (Number(teamBusiness || 0) >= tier.business) currentRank = tier;
+  }
+  return currentRank;
+};
 
 export const evaluateAndApplyRankReward = async (userId) => {
-
-
-  // load user
   const user = await UserModel.findById(userId);
-  if (!user) throw new Error("User not found");
+  if (!user) return null;
 
-  // get direct referrals (legs)
-  const directRefs = await UserModel.find({ referrer: user._id })
-    .select(`${BUSINESS_FIELD} name userId`)
-    .lean();
+  const teamBusiness = await getTeamBusiness(user._id);
+  const rank = getRankForBusiness(teamBusiness);
 
-  if (!directRefs || directRefs.length === 0) {
-    return { awarded: false, reason: "no_direct_legs" };
-  }
-
-  // For each direct referral, compute business under that leg (including that ref's own business)
-  const legs = [];
-  for (const ref of directRefs) {
-    // get downline for this leg (use your existing helper)
-    const downline = await getDownlineByLevels(ref._id, 100, false);
-    // sum businesses: include ref itself + every user returned in levels
-    let sum = (ref[BUSINESS_FIELD] || 0);
-    for (const lvl in downline) {
-      const arr = downline[lvl];
-      for (const u of arr) {
-        sum += (u[BUSINESS_FIELD] || 0);
-      }
-    }
-    legs.push({ userId: ref.userId, name: ref.name, business: sum });
-  }
-
-  // sort legs desc by business
-  legs.sort((a, b) => b.business - a.business);
-
-  const top1 = legs[0]?.business || 0;
-  const top2 = legs[1]?.business || 0;
-  const top3 = legs[2]?.business || 0;
-
-  const totalTeamBusiness = legs.reduce((s, l) => s + (l.business || 0), 0);
-
-  // apply 40% / 30% / 30% caps
-  const cap1 = Math.min(top1, totalTeamBusiness * 0.4);
-  const cap2 = Math.min(top2, totalTeamBusiness * 0.3);
-  const cap3 = Math.min(top3, totalTeamBusiness * 0.3);
-
-  const eligibleBusiness = cap1 + cap2 + cap3;
-
-  // find highest reward tier eligible
-  let highestIdx = -1;
-  for (let i = 0; i < REWARD_TIERS.length; i++) {
-    if (eligibleBusiness >= REWARD_TIERS[i].threshold) highestIdx = i;
-  }
-  if (highestIdx === -1) {
-    return { awarded: false, reason: "not_eligible", eligibleBusiness, caps: { cap1, cap2, cap3 } };
-  }
-
-  
-  console.log("🔍 Legs =>", legs);
-console.log("top1", top1, "top2", top2, "top3", top3, "total", totalTeamBusiness);
-console.log("caps =>", { cap1, cap2, cap3 }, "eligibleBusiness", eligibleBusiness);
-
-  // Check claimed tiers
-  user.claimedRankRewards = user.claimedRankRewards || [];
-  const highestThreshold = REWARD_TIERS[highestIdx].threshold;
-  if (user.claimedRankRewards.includes(highestThreshold)) {
-    return { awarded: false, reason: "already_claimed", threshold: highestThreshold };
-  }
-
-  // Award: choose highest unclaimed tier (supersede lower tiers)
-  const rewardAmount = REWARD_TIERS[highestIdx].reward;
-
-   // ✅ Check working cap using helper
-  const available = await getAvailableIncome(user._id, "working");
-  if (available <= 0) {
-    return { awarded: false, reason: "working_cap_reached" };
-  }
-
-  const addableReward = Math.min(rewardAmount, available);
-
-  // update user's reward income and history
-  user.rankRewardIncome = (user.rankRewardIncome || 0) + addableReward;
-  user.rankRewardHistory = user.rankRewardHistory || [];
-  user.rankRewardHistory.push({
-    milestone: highestThreshold,
-    reward: rewardAmount,
-    business: eligibleBusiness,
-    strongLeg: cap1,
-    secondLeg: cap2,
-    thirdLeg: cap3,
-    legs: legs.slice(0, 3).map(l => ({ userId: l.userId, business: l.business })),
-    date: new Date()
-  });
-
-  // mark as claimed all tiers up to highestIdx (so lower tiers won't be paid later)
-  for (let i = 0; i <= highestIdx; i++) {
-    const t = REWARD_TIERS[i].threshold;
-    if (!user.claimedRankRewards.includes(t)) user.claimedRankRewards.push(t);
-  }
-
+  user.currentRank = rank ? rank.rank : null;
+  user.teamBusiness = teamBusiness;
   await user.save();
 
-  return {
-    awarded: true,
-    reward: addableReward,
-    milestone: highestThreshold,
-    eligibleBusiness,
-    caps: { cap1, cap2, cap3 },
-    legs: legs.slice(0, 3)
-  };
+  return { userId: user.userId, rank: user.currentRank, teamBusiness };
 };
 
 export const evaluateAllUsersRankRewards = async () => {
-  try {
-    const users = await UserModel.find({}, "_id userId name"); // bas _id lena kaafi hai
-    console.log(`🔄 Processing ${users.length} users for rank rewards...`);
-
-    let results = [];
-    for (const user of users) {
-      try {
-        const res = await evaluateAndApplyRankReward(user._id);
-        results.push({ userId: user.userId, name: user.name, ...res });
-      } catch (err) {
-        console.error(`❌ Error processing user ${user.userId}:`, err.message);
-        results.push({ userId: user.userId, name: user.name, error: err.message });
-      }
+  const users = await UserModel.find({}, "_id userId").lean();
+  for (const user of users) {
+    try {
+      await evaluateAndApplyRankReward(user._id);
+    } catch (err) {
+      console.error(`Rank update error for ${user.userId}:`, err.message);
     }
-
-    console.log("✅ Rank reward evaluation complete.");
-    return results;
-  } catch (err) {
-    console.error("🚨 Failed to evaluate all users:", err);
-    throw err;
   }
 };
 
-export const rankRewardHistory = async (req, res) => {
+export const getAllUsersRank = async (req, res) => {
   try {
-    const isAdmin = req.currentUser.role === "admin"; // assuming you have a role field
-    let users;
+    const users = await UserModel.find({ isActivated: true })
+      .select("userId name totalInvested teamBusiness currentRank createdAt")
+      .sort({ teamBusiness: -1 })
+      .lean();
 
-    if (isAdmin) {
-      const { userId } = req.query;
+    const result = users.map((user) => {
+      const rankObj = RANK_TIERS.find((rank) => rank.rank === user.currentRank) || null;
+      return {
+        userId: user.userId,
+        name: user.name,
+        totalInvested: user.totalInvested || 0,
+        teamBusiness: user.teamBusiness || 0,
+        level: rankObj?.level || "-",
+        rank: user.currentRank || "-",
+        reward: rankObj?.reward || "-",
+        createdAt: user.createdAt,
+      };
+    });
 
-      if (userId) {
-        const user = await UserModel.findById(userId)
-          .select("rankRewardHistory rankRewardIncome name userId")
-          .lean();
-        if (!user) return errorResponse(res, "User not found", 404);
-
-        return successResponse(res, "User rank reward history fetched", user);
-      }
-
-      // No userId → fetch all users
-      users = await UserModel.find()
-        .select("rankRewardHistory rankRewardIncome name userId")
-        .lean();
-
-      return successResponse(res, "All users rank reward history fetched", users);
-    } else {
-      // Regular user → fetch own
-      const userId = req.currentUser._id;
-      const user = await UserModel.findById(userId)
-        .select("rankRewardHistory rankRewardIncome")
-        .lean();
-
-      if (!user) return errorResponse(res, "User not found", 404);
-
-      return successResponse(res, "Your rank reward history fetched", user);
-    }
+    return successResponse(res, "User ranks fetched", { ranks: result, rankPlan: RANK_TIERS });
   } catch (err) {
-    console.error(err);
-    return errorResponse(res, "Server error");
+    return errorResponse(res, "Failed to fetch ranks");
+  }
+};
+
+export const getUserRank = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await UserModel.findOne({ userId }).select("_id userId name totalInvested").lean();
+    if (!user) return errorResponse(res, "User not found", 404);
+
+    const teamBusiness = await getTeamBusiness(user._id);
+    const currentRank = getRankForBusiness(teamBusiness);
+    const nextRank = RANK_TIERS.find((rank) => rank.business > teamBusiness) || null;
+
+    return successResponse(res, "Rank fetched", {
+      userId: user.userId,
+      name: user.name,
+      totalInvested: user.totalInvested || 0,
+      teamBusiness,
+      currentRank,
+      nextRank,
+      allRanks: RANK_TIERS,
+    });
+  } catch (err) {
+    return errorResponse(res, "Failed to fetch rank");
   }
 };

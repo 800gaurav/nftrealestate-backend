@@ -33,6 +33,10 @@ const depositSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  planDailyPercent: {
+    type: Number,
+    default: 0
+  },
   currency: {
     type: String,
     default: "USDT"

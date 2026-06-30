@@ -125,7 +125,7 @@ const authController = {
         referralLevel: (sponsor.referralLevel || 0) + 1,
     
         
-        walletBalance: 5,
+        walletBalance: 0,
       });
 
       await UserModel.findByIdAndUpdate(placement.parent._id, {
@@ -152,7 +152,7 @@ const authController = {
         { expiresIn: JWT_EXPIRE }
       );
 
-      return successResponse(res, "User registered successfully & Your Bonus of 5$ is added to wallet", {
+      return successResponse(res, "User registered successfully", {
         ...newUser._doc,
         token,
       });

@@ -23,97 +23,104 @@ try {
     if (!SERVICE_PLANS.some(plan => plan.price === nft.price)) {
       return res.status(400).json({ success: false, message: "Invalid service package" });
     }
-    if(user.fundBalance < nft.price) return res.status(400).json({ success: false, message: "Insufficient balance" });
+    const selectedPackage = SERVICE_PLANS.find(plan => Number(plan.price) === Number(nft.price));
 
+    // Fund wallet check - agar fund balance hai to OTP bhejo, warna oxapay flow
+    const hasFundBalance = user.fundBalance >= nft.price;
 
     const otp = Math.floor(100000 + Math.random() * 900000);
     user.nftbuyOTP = otp;
-     await user.save();
-       const { success, error } = await sendbuynftEmailOtp(user.email, otp);
-    if (!success) {
-      return res.status(500).json({ success: false, message: "Failed to send OTP", error });
+    await user.save();
+
+    if (hasFundBalance) {
+      const { success, error } = await sendbuynftEmailOtp(user.email, otp);
+      if (!success) return res.status(500).json({ success: false, message: "Failed to send OTP", error });
     }
 
-    res.status(200).json({ success: true, message: "OTP sent to your email" ,userId: user.userId, txnPassword: user.txnpass, nft});
-
-
-
-    //  const transporter = nodemailer.createTransport({
-    //   service: process.env.EMAIL_HOST,
-    //   auth: {
-    //     user: process.env.EMAIL_USERNAME,
-    //     pass: process.env.EMAIL_PASSWORD,
-    //   },
-    // });
-    //    await transporter.sendMail({
-    //   from: process.env.EMAIL_USERNAME,
-    //   to: user.email,
-    //   subject: "NFT Purchase OTP",
-    //   text: `Your OTP for NFT Purchase is ${otp}`,
-    // });
-    //  res.status(200).json({ success: true, message: "OTP sent to your email" });
+    res.status(200).json({
+      success: true,
+      message: hasFundBalance ? "OTP sent to your email" : "Proceed with OxaPay payment",
+      userId: user.userId,
+      txnPassword: user.txnpass,
+      nft,
+      hasFundBalance,
+      fundBalance: user.fundBalance,
+    });
 
 } catch (error) {
     console.error("Error in sendPurchaseOtp:", error);
-    res.status(500).json({ success: false, message: "Internal server error",  });
+    res.status(500).json({ success: false, message: "Internal server error" });
 }
 }
 
 const confirmBuyNft = async (req, res) => {
-  // const { userId } = req.params;
   const { nftId, otp, txnpass, userId} = req.body;
-  // const { nftId, txnpass, userId} = req.body;
-
 
   try {
     const user = await UserModel.findOne({userId});
     const nft = await NftModel.findById(nftId);
-  //  console.log(user)
-   console.log(nft)
 
     if (!user || !nft) return res.status(404).json({ success: false, message: "User or NFT not found" });
     if (!SERVICE_PLANS.some(plan => plan.price === nft.price)) {
       return res.status(400).json({ success: false, message: "Invalid service package" });
     }
-    console.log('here')
-     const referrar = await UserModel.findById(user.referrer)
-    if (String(user.txnpass || "").trim() !== String(txnpass || "").trim())return res.status(404).json({ success: false, message: "Transaction password is worong" });
-    if (user.fundBalance < nft.price) return res.status(400).json({ success: false, message: "Insufficient balance" });
 
-if(user.nftbuyOTP !== Number(otp)){
-    console.log(`userby${user.nftbuyOTP} otp${otp}`)
-     return res.status(400).json({ success: false, message: "Invalid OTP" });
-}
+    const referrar = await UserModel.findById(user.referrer);
+    if (String(user.txnpass || "").trim() !== String(txnpass || "").trim())
+      return res.status(404).json({ success: false, message: "Transaction password is wrong" });
 
-    const packageAmount = Number(nft.price || 0);
-    const stakingAmount = round2((packageAmount * Number(INCOME_PLAN.joining.percentOfJoiningAmount || 40)) / 100);
+    const hasFundBalance = user.fundBalance >= nft.price;
 
-    user.fundBalance -= packageAmount;
-    user.totalInvested += packageAmount;
-    user.stakingPrincipal += stakingAmount;
-    if (referrar && !user.referralGiven) {
-      const sponsorIncome = (packageAmount * INCOME_PLAN.sponsor.percent) / 100;
-      referrar.walletBalance += sponsorIncome;
-      referrar.todayIncome += sponsorIncome;
-      referrar.proBonusIncome += sponsorIncome;
-      referrar.totalProfitEarned += sponsorIncome;
-      referrar.proBonusHistory = referrar.proBonusHistory || [];
-      referrar.proBonusHistory.push({
-        fromUser: user.userId,
-        amount: sponsorIncome,
-        baseAmount: packageAmount,
+    if (hasFundBalance) {
+      // Fund wallet se payment
+      if (user.nftbuyOTP !== Number(otp)) {
+        return res.status(400).json({ success: false, message: "Invalid OTP" });
+      }
+      const packageAmount = Number(nft.price || 0);
+      const stakingAmount = round2((packageAmount * Number(INCOME_PLAN.joining.percentOfJoiningAmount || 40)) / 100);
+
+      user.fundBalance -= packageAmount;
+      user.fundWalletHistory = user.fundWalletHistory || [];
+      user.fundWalletHistory.push({
+        type: "debit",
+        amount: packageAmount,
+        note: `Package purchase: ${nft.title || nft._id}`,
+        balanceAfter: user.fundBalance,
         date: new Date(),
       });
-      await referrar.save();
-      user.referralGiven = true;
-    }
-    user.nfts.push({ nft: nft._id, price: packageAmount });
-    user.isActivated = true
-    user.nftbuyOTP = null;
-    await user.save();
-    await updateBinaryBusinessAndMatching(user._id, packageAmount);
+      user.totalInvested += packageAmount;
+      user.stakingPrincipal += stakingAmount;
+      user.roiPercent = Number(selectedPackage?.dailyPercent || 0.5);
+      user.stopROIIncome = false;
+      user.nfts.push({ nft: nft._id, price: packageAmount });
+      user.isActivated = true;
+      user.nftbuyOTP = null;
+      await user.save();
+      await updateBinaryBusinessAndMatching(user._id, packageAmount);
 
-    res.status(200).json({ success: true, message: "Service package purchased successfully." });
+      // Sponsor income - 10%
+      if (referrar && Number(INCOME_PLAN.sponsor.percent || 0) > 0) {
+        const sponsorIncome = round2((packageAmount * Number(INCOME_PLAN.sponsor.percent || 0)) / 100);
+        referrar.walletBalance += sponsorIncome;
+        referrar.todayIncome += sponsorIncome;
+        referrar.proBonusIncome += sponsorIncome;
+        referrar.totalProfitEarned += sponsorIncome;
+        referrar.proBonusHistory = referrar.proBonusHistory || [];
+        referrar.proBonusHistory.push({
+          fromUser: user.userId,
+          amount: sponsorIncome,
+          baseAmount: packageAmount,
+          date: new Date(),
+        });
+        await referrar.save();
+        await user.save();
+      }
+
+      return res.status(200).json({ success: true, message: "Package purchased successfully from Fund Wallet." });
+    } else {
+      // Normal OxaPay flow - sirf validate karo
+      return res.status(200).json({ success: true, message: "Proceed with OxaPay payment", useOxaPay: true });
+    }
   } catch (error) {
     console.error("Error in buyNft:", error);
     res.status(500).json({ success: false, message: "Internal server error" });
