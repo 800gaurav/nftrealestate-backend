@@ -493,9 +493,11 @@ export { SERVICE_PLANS, SERVICES, INCOME_PLAN, REWARD_RANKS };
       const { resetDailyIncomes } = await import('../../helper/resetdailyincome.js')
       const { calculateDailyIncome } = await import('../../incomecalculation/retunonequity.js')
       const { evaluateAllUsersRankRewards } = await import('../../incomecalculation/rewardIncome.js')
+      const { runDailyMatchingForAllUsers } = await import('../../incomecalculation/matchingIncome.js')
 
       await resetDailyIncomes()
       await calculateDailyIncome()
+      await runDailyMatchingForAllUsers()
       await evaluateAllUsersRankRewards()
 
       return successResponse(res, 'Daily income job executed successfully')

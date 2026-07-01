@@ -63,10 +63,9 @@ const authController = {
 
       const placementSide = side === "right" ? "right" : "left";
 
-      // Check if user already exists
-      const isAlreadyExists = await UserModel.findOne({ email });
-      if (isAlreadyExists)
-        return errorResponse(res, "Email already registered", 400);
+      // Check if same email already used 3 times
+      const emailCount = await UserModel.countDocuments({ email });
+      if (emailCount >= 3) return errorResponse(res, "Maximum 3 accounts allowed per email", 400);
 
       // Find sponsor
       const sponsor = await UserModel.findOne({ referralCode: referrerCode });
@@ -79,11 +78,10 @@ const authController = {
       const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit
       const otpExpiry = Date.now() + 10 * 60 * 1000; // 10 minutes
 
-      // Save temp data
-      await TempUserModel.findOneAndUpdate(
-        { email },
-        { name, email, phone, password, referrerCode, side: placementSide, otp, otpExpiry },
-        { upsert: true, new: true }
+      // Save temp data - delete old one if exists for same email+referrer combo
+      await TempUserModel.deleteOne({ email, referrerCode });
+      await TempUserModel.create(
+        { name, email, phone, password, referrerCode, side: placementSide, otp, otpExpiry }
       );
 
       // Send OTP email
@@ -100,11 +98,12 @@ const authController = {
     try {
       const { email, otp } = req.body;
 
-      const tempUser = await TempUserModel.findOne({ email });
-      if (!tempUser) return errorResponse(res, "No pending registration found", 404);
+      const tempUser = await TempUserModel.findOne({ email, otp });
+      if (!tempUser) return errorResponse(res, "Invalid OTP or no pending registration found", 400);
 
-      if (tempUser.otp !== otp || Date.now() > tempUser.otpExpiry) {
-        return errorResponse(res, "Invalid or expired OTP", 400);
+      if (Date.now() > tempUser.otpExpiry) {
+        await tempUser.deleteOne();
+        return errorResponse(res, "OTP expired", 400);
       }
 
       // Sponsor check

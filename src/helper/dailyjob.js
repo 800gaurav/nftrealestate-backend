@@ -4,6 +4,7 @@ import path from "path";
 import { calculateDailyIncome } from "../incomecalculation/retunonequity.js";
 import { resetDailyIncomes } from "./resetdailyincome.js";
 import { evaluateAllUsersRankRewards } from "../incomecalculation/rewardIncome.js";
+import { runDailyMatchingForAllUsers } from "../incomecalculation/matchingIncome.js";
 
 const logFilePath = path.resolve("lastJobRunDate.txt");
 
@@ -27,6 +28,7 @@ const runDailyJob = async () => {
 
   await resetDailyIncomes();
   await calculateDailyIncome();
+  await runDailyMatchingForAllUsers();
   await evaluateAllUsersRankRewards();
 
   updateLastRunDate();

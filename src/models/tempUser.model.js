@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 
 const TempUserSchema = new mongoose.Schema({
   name: String,
-  email: { type: String, unique: true },
+  email: { type: String },
   phone: String,
   password: String,
   referrerCode: String,
