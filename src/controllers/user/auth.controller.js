@@ -380,8 +380,8 @@ const authController = {
       if (email) user.email = email;
       if (phone) user.phone = phone;
       if (txnpass && txnpass.trim() !== "") user.txnpass = txnpass;
-      if (withdrawTRC_ADDRESS && withdrawTRC_ADDRESS.trim() !== "") user.withdrawTRC_ADDRESS = withdrawTRC_ADDRESS.trim();
-      if (withdrawBEP_ADDRESS && withdrawBEP_ADDRESS.trim() !== "") user.withdrawBEP_ADDRESS = withdrawBEP_ADDRESS.trim();
+      if (withdrawTRC_ADDRESS !== undefined) user.withdrawTRC_ADDRESS = withdrawTRC_ADDRESS.trim();
+      if (withdrawBEP_ADDRESS !== undefined) user.withdrawBEP_ADDRESS = withdrawBEP_ADDRESS.trim();
 
       await user.save();
 
