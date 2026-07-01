@@ -1,4 +1,4 @@
-import crypto from "crypto";
+﻿import crypto from "crypto";
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 
@@ -43,8 +43,8 @@ const userSchema = new mongoose.Schema(
     leftChild: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     rightChild: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     directreferaralCount:{type:Number, default: 0},
-    leftTeamSp: { type: Number, default: 0 },
-    rightTeamSp: { type: Number, default: 0 },
+    leftBusiness: { type: Number, default: 0 },
+    rightBusiness: { type: Number, default: 0 },
     leftCarry: { type: Number, default: 0 },
     rightCarry: { type: Number, default: 0 },
     isBinaryStarted: { type: Boolean, default: false },

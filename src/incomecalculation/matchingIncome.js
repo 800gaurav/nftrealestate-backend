@@ -8,7 +8,6 @@ const getDailyMatchingCap = (user) => {
     : Number(matching.dailyCap || 50);
 };
 
-// Left/Right mein kitni active IDs hain count karo
 const countActiveIds = async (rootId, side) => {
   const root = await UserModel.findById(rootId).select("leftChild rightChild");
   if (!root) return 0;
@@ -33,34 +32,27 @@ const creditMatchingIncome = async (user) => {
 
   let left = Number(user.leftCarry || 0);
   let right = Number(user.rightCarry || 0);
+  if (left <= 0 || right <= 0) return;
+
   const cap = getDailyMatchingCap(user);
   const remainingCap = Math.max(cap - Number(user.todayMatchingIncome || 0), 0);
-  if (remainingCap <= 0 || left <= 0 || right <= 0) return;
+  if (remainingCap <= 0) return;
 
   const percent = Number(INCOME_PLAN.matching?.percent || 10) / 100;
-  let matchedBusiness = 0;
 
   if (!user.isBinaryStarted) {
-    // Active ID count se 2:1 check karo
     const leftCount = await countActiveIds(user._id, "left");
     const rightCount = await countActiveIds(user._id, "right");
-
     const twoOneCondition =
       (leftCount >= 2 && rightCount >= 1) ||
       (rightCount >= 2 && leftCount >= 1);
-
-    if (!twoOneCondition) return; // condition poori nahi hui, wait karo
-
+    if (!twoOneCondition) return;
     user.isBinaryStarted = true;
   }
 
-  // 1:1 matching on carry amounts
-  const oneToOneBusiness = Math.min(left, right);
-  matchedBusiness = oneToOneBusiness;
-  left -= oneToOneBusiness;
-  right -= oneToOneBusiness;
+  const matched = Math.min(left, right);
+  const income = Math.min(matched * percent, remainingCap);
 
-  const income = Math.min(matchedBusiness * percent, remainingCap);
   if (income > 0) {
     user.walletBalance += income;
     user.todayIncome += income;
@@ -70,8 +62,8 @@ const creditMatchingIncome = async (user) => {
     user.todaypair += 1;
   }
 
-  user.leftCarry = left;
-  user.rightCarry = right;
+  user.leftCarry = left - matched;
+  user.rightCarry = right - matched;
   await user.save();
 };
 
@@ -82,17 +74,17 @@ export const updateBinaryBusinessAndMatching = async (buyerId, businessAmount) =
 
   while (current?.placementParent) {
     const upliner = await UserModel.findById(current.placementParent).select(
-      "leftChild rightChild leftTeamSp rightTeamSp leftCarry rightCarry isActivated isBinaryStarted todaypair todayIncome walletBalance totalProfitEarned totalInvested matchingIncome todayMatchingIncome placementParent"
+      "leftChild rightChild leftBusiness rightBusiness leftCarry rightCarry isActivated isBinaryStarted todaypair todayIncome walletBalance totalProfitEarned totalInvested matchingIncome todayMatchingIncome placementParent"
     );
     if (!upliner) break;
 
     const currentId = String(current._id);
     if (String(upliner.leftChild || "") === currentId) {
-      upliner.leftTeamSp += amount;
-      upliner.leftCarry += amount;
+      upliner.leftBusiness = (upliner.leftBusiness || 0) + amount;
+      upliner.leftCarry = (upliner.leftCarry || 0) + amount;
     } else if (String(upliner.rightChild || "") === currentId) {
-      upliner.rightTeamSp += amount;
-      upliner.rightCarry += amount;
+      upliner.rightBusiness = (upliner.rightBusiness || 0) + amount;
+      upliner.rightCarry = (upliner.rightCarry || 0) + amount;
     }
 
     await creditMatchingIncome(upliner);
@@ -100,12 +92,16 @@ export const updateBinaryBusinessAndMatching = async (buyerId, businessAmount) =
   }
 };
 
-// Daily job ke liye - saare active users ki matching recalculate karo
 export const runDailyMatchingForAllUsers = async () => {
   const users = await UserModel.find({ isActivated: true }).select(
-    "leftChild rightChild leftCarry rightCarry isActivated isBinaryStarted todaypair todayIncome walletBalance totalProfitEarned totalInvested matchingIncome todayMatchingIncome placementParent"
+    "leftChild rightChild leftBusiness rightBusiness leftCarry rightCarry isActivated isBinaryStarted todaypair todayIncome walletBalance totalProfitEarned totalInvested matchingIncome todayMatchingIncome placementParent"
   );
   for (const user of users) {
+    // leftCarry/rightCarry repopulate karo leftBusiness/rightBusiness se agar dono zero hain
+    if (Number(user.leftCarry || 0) === 0 && Number(user.rightCarry || 0) === 0) {
+      user.leftCarry = Number(user.leftBusiness || 0);
+      user.rightCarry = Number(user.rightBusiness || 0);
+    }
     if (Number(user.leftCarry || 0) > 0 && Number(user.rightCarry || 0) > 0) {
       await creditMatchingIncome(user);
     }
