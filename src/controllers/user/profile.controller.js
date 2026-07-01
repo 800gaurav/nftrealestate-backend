@@ -144,6 +144,8 @@ const profileController = {
           roiIncomeHistory: user.roiIncomeHistory || [],
           proBonusHistory: user.proBonusHistory || [],
           sponsor: user.sponsor || null,
+          withdrawTRC_ADDRESS: user.withdrawTRC_ADDRESS || "",
+          withdrawBEP_ADDRESS: user.withdrawBEP_ADDRESS || "",
         }
       });
     } catch (error) {
