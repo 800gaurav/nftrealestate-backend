@@ -182,7 +182,7 @@ const authController = {
     if (usertoken) {
       try {
         const decoded = jwt.verify(usertoken, JWT_SECRET);
-        if (decoded._id !== user._id.toString()) {
+        if (String(decoded._id) !== String(user._id)) {
           return errorResponse(res, "Token mismatch", 401);
         }
       } catch (err) {
@@ -376,16 +376,16 @@ const authController = {
       const user = await UserModel.findById(req.currentUser._id);
       if (!user) return res.status(404).json({ message: "User not found" });
 
-      user.name = name;
-      user.email = email;
-      user.phone = phone;
-      user.txnpass = txnpass;
-      user.withdrawTRC_ADDRESS = withdrawTRC_ADDRESS;
-      user.withdrawBEP_ADDRESS = withdrawBEP_ADDRESS;
+      if (name) user.name = name;
+      if (email) user.email = email;
+      if (phone) user.phone = phone;
+      if (txnpass && txnpass.trim() !== "") user.txnpass = txnpass;
+      if (withdrawTRC_ADDRESS && withdrawTRC_ADDRESS.trim() !== "") user.withdrawTRC_ADDRESS = withdrawTRC_ADDRESS.trim();
+      if (withdrawBEP_ADDRESS && withdrawBEP_ADDRESS.trim() !== "") user.withdrawBEP_ADDRESS = withdrawBEP_ADDRESS.trim();
 
       await user.save();
 
-      return res.status(200).json({ message: "Profile updated successfully" });
+      return res.status(200).json({ success: true, message: "Profile updated successfully" });
 
     } catch (error) {
       console.error("Update profile error:", error);

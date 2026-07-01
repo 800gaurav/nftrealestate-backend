@@ -96,8 +96,8 @@ const userSchema = new mongoose.Schema(
    stopROIIncome: { type: Boolean, default: false },
 
    //Withdraw
-   withdrawTRC_ADDRESS: { type: String, default: 0 },
-   withdrawBEP_ADDRESS: { type: String, default: 0 },
+   withdrawTRC_ADDRESS: { type: String, default: "" },
+   withdrawBEP_ADDRESS: { type: String, default: "" },
 
    
   proBonusHistory: [
