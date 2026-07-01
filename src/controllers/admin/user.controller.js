@@ -1,4 +1,4 @@
-﻿import { JWT_EXPIRE, JWT_SECRET } from "../../config/index.js";
+import { JWT_EXPIRE, JWT_SECRET } from "../../config/index.js";
 import { UserModel } from "../../models/user.model.js";
 import { WithdrawModel } from "../../models/withdraw.model.js";
 import AdminUpdateHistory from "../../models/addedbyadminhistory.js";
