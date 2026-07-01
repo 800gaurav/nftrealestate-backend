@@ -25,7 +25,7 @@ router.get("/fund-wallet-history/:userId", requireAuth(["admin"]), userControlle
 
 router.post("/run-income-job", requireAuth(["admin"]), userController.runDailyJobManually)
 
-router.get("/get-plans", requireAuth(["admin"]), userController.getPlans)
+router.get("/get-plans", userController.getPlans)
 router.put("/update-plans", requireAuth(["admin"]), userController.updatePlans)
 router.post("/update-banner", requireAuth(["admin"]), updateBanner);
 
