@@ -27,6 +27,33 @@ const countActiveIds = async (rootId, side) => {
   return count;
 };
 
+const getLegStats = async (rootId, side) => {
+  const root = await UserModel.findById(rootId).select("leftChild rightChild");
+  if (!root) return { activeCount: 0, business: 0 };
+
+  const childId = side === "left" ? root.leftChild : root.rightChild;
+  if (!childId) return { activeCount: 0, business: 0 };
+
+  let activeCount = 0;
+  let business = 0;
+  const queue = [childId];
+
+  while (queue.length > 0) {
+    const id = queue.shift();
+    const node = await UserModel.findById(id).select("isActivated totalInvested leftChild rightChild");
+    if (!node) continue;
+
+    if (node.isActivated) {
+      activeCount += 1;
+      business += Number(node.totalInvested || 0);
+    }
+    if (node.leftChild) queue.push(node.leftChild);
+    if (node.rightChild) queue.push(node.rightChild);
+  }
+
+  return { activeCount, business };
+};
+
 const creditMatchingIncome = async (user) => {
   if (!user.isActivated) return;
 
@@ -50,8 +77,10 @@ const creditMatchingIncome = async (user) => {
     user.isBinaryStarted = true;
   }
 
-  const matched = Math.min(left, right);
-  const income = Math.min(matched * percent, remainingCap);
+  if (percent <= 0) return;
+
+  const matched = Math.min(left, right, remainingCap / percent);
+  const income = matched * percent;
 
   if (income > 0) {
     user.walletBalance += income;
@@ -87,6 +116,7 @@ export const updateBinaryBusinessAndMatching = async (buyerId, businessAmount) =
       upliner.rightCarry = (upliner.rightCarry || 0) + amount;
     }
 
+    await upliner.save();
     await creditMatchingIncome(upliner);
     current = upliner;
   }
@@ -97,11 +127,22 @@ export const runDailyMatchingForAllUsers = async () => {
     "leftChild rightChild leftBusiness rightBusiness leftCarry rightCarry isActivated isBinaryStarted todaypair todayIncome walletBalance totalProfitEarned totalInvested matchingIncome todayMatchingIncome placementParent"
   );
   for (const user of users) {
-    // leftCarry/rightCarry repopulate karo leftBusiness/rightBusiness se agar dono zero hain
-    if (Number(user.leftCarry || 0) === 0 && Number(user.rightCarry || 0) === 0) {
-      user.leftCarry = Number(user.leftBusiness || 0);
-      user.rightCarry = Number(user.rightBusiness || 0);
+    const leftStats = await getLegStats(user._id, "left");
+    const rightStats = await getLegStats(user._id, "right");
+
+    const storedLeftBusiness = Number(user.leftBusiness || 0);
+    const storedRightBusiness = Number(user.rightBusiness || 0);
+    const leftDelta = Math.max(leftStats.business - storedLeftBusiness, 0);
+    const rightDelta = Math.max(rightStats.business - storedRightBusiness, 0);
+
+    if (leftDelta > 0 || rightDelta > 0) {
+      user.leftBusiness = Math.max(storedLeftBusiness, leftStats.business);
+      user.rightBusiness = Math.max(storedRightBusiness, rightStats.business);
+      user.leftCarry = Number(user.leftCarry || 0) + leftDelta;
+      user.rightCarry = Number(user.rightCarry || 0) + rightDelta;
+      await user.save();
     }
+
     if (Number(user.leftCarry || 0) > 0 && Number(user.rightCarry || 0) > 0) {
       await creditMatchingIncome(user);
     }
