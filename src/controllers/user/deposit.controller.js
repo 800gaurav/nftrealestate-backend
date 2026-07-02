@@ -13,13 +13,22 @@ const round2 = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100
 const creditTeamBusinessIncome = async ({ user, packageAmount }) => {
   if (!user?.referrer) return;
 
-  const sponsor = await UserModel.findById(user.referrer).select(
-    "directreferaralCount userId walletBalance totalProfitEarned todayIncome teamBusinessIncome teamBusinessHistory"
+  const directSponsor = await UserModel.findById(user.referrer).select(
+    "userId referrer"
   );
-  if (!sponsor) return;
+  if (!directSponsor?.referrer) return;
+
+  const qualifiedSponsor = await UserModel.findById(directSponsor.referrer).select(
+    "userId walletBalance totalProfitEarned todayIncome teamBusinessIncome teamBusinessHistory"
+  );
+  if (!qualifiedSponsor) return;
 
   const requiredDirects = Number(INCOME_PLAN.teamGrowth?.requiredDirects || 10);
-  if (Number(sponsor.directreferaralCount || 0) < requiredDirects) return;
+  const activeDirectCount = await UserModel.countDocuments({
+    referrer: qualifiedSponsor._id,
+    isActivated: true,
+  });
+  if (activeDirectCount < requiredDirects) return;
 
   const percent = Number(INCOME_PLAN.teamGrowth?.percent || 1);
   const income = Math.round(((Number(packageAmount || 0) * percent) / 100) * 100) / 100;
@@ -27,7 +36,7 @@ const creditTeamBusinessIncome = async ({ user, packageAmount }) => {
 
   const buyerCode = user.userId || String(user._id);
   await UserModel.findOneAndUpdate(
-    { _id: sponsor._id },
+    { _id: qualifiedSponsor._id },
     {
       $inc: {
         walletBalance: income,
@@ -38,6 +47,7 @@ const creditTeamBusinessIncome = async ({ user, packageAmount }) => {
       $push: {
         teamBusinessHistory: {
           fromUser: buyerCode,
+          referredBy: directSponsor.userId || String(directSponsor._id),
           baseAmount: packageAmount,
           amount: income,
           date: new Date(),

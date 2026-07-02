@@ -12,6 +12,10 @@ import { currentUser } from "../../middlewares/current-user.js";
 
 import { TempUserModel } from "../../models/tempUser.model.js";
 
+const normalizeEmail = (email = "") => String(email).trim().toLowerCase();
+const normalizeOtp = (otp = "") => String(otp).trim();
+const escapeRegex = (value = "") => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 const authController = {
   sendEmailOTP: async (req, res) => {
     const { email } = req.body;
@@ -61,10 +65,11 @@ const authController = {
       if (!name || !email || !phone || !password || !referrerCode)
         return errorResponse(res, "All fields are required", 400);
 
+      const normalizedEmail = normalizeEmail(email);
       const placementSide = side === "right" ? "right" : "left";
 
       // Check if same email already used 3 times
-      const emailCount = await UserModel.countDocuments({ email });
+      const emailCount = await UserModel.countDocuments({ email: normalizedEmail });
       if (emailCount >= 3) return errorResponse(res, "Maximum 3 accounts allowed per email", 400);
 
       // Find sponsor
@@ -79,15 +84,18 @@ const authController = {
       const otpExpiry = Date.now() + 10 * 60 * 1000; // 10 minutes
 
       // Save temp data - delete old one if exists for same email+referrer combo
-      await TempUserModel.deleteOne({ email, referrerCode });
+      await TempUserModel.deleteMany({
+        email: { $regex: `^${escapeRegex(normalizedEmail)}$`, $options: "i" },
+        referrerCode,
+      });
       await TempUserModel.create(
-        { name, email, phone, password, referrerCode, side: placementSide, otp, otpExpiry }
+        { name, email: normalizedEmail, phone, password, referrerCode, side: placementSide, otp, otpExpiry }
       );
 
       // Send OTP email
-      await sendRegisterationOTP(email, otp);
+      await sendRegisterationOTP(normalizedEmail, otp);
 
-      return successResponse(res, "OTP sent to your email. Please verify to complete registration", { email });
+      return successResponse(res, "OTP sent to your email. Please verify to complete registration", { email: normalizedEmail });
     } catch (err) {
       console.error(err);
       return errorResponse(res, "Registration failed", 500);
@@ -97,8 +105,13 @@ const authController = {
   verifyRegistrationOtp: async (req, res) => {
     try {
       const { email, otp } = req.body;
+      const normalizedEmail = normalizeEmail(email);
+      const normalizedOtp = normalizeOtp(otp);
 
-      const tempUser = await TempUserModel.findOne({ email, otp });
+      const tempUser = await TempUserModel.findOne({
+        email: { $regex: `^${escapeRegex(normalizedEmail)}$`, $options: "i" },
+        otp: normalizedOtp,
+      });
       if (!tempUser) return errorResponse(res, "Invalid OTP or no pending registration found", 400);
 
       if (Date.now() > tempUser.otpExpiry) {
@@ -135,18 +148,14 @@ const authController = {
         [placement.side === "left" ? "leftChild" : "rightChild"]: newUser._id,
       });
 
+      await UserModel.findByIdAndUpdate(sponsor._id, {
+        $inc: { directreferaralCount: 1 },
+        $addToSet: { downline: newUser._id },
+      });
+
 
       // Delete temp record
       await tempUser.deleteOne();
-
-      // Send credentials email
-      await sendRegistrationCredentialsEmail({
-        toEmail: newUser.email,
-        name: newUser.name,
-        userId: newUser.userId,
-        password: tempUser.password,
-        referralCode: newUser.referralCode,
-      });
 
       // Generate JWT
       const token = jwt.sign(
@@ -155,10 +164,22 @@ const authController = {
         { expiresIn: JWT_EXPIRE }
       );
 
-      return successResponse(res, "User registered successfully", {
+      const response = successResponse(res, "User registered successfully", {
         ...newUser._doc,
         token,
       });
+
+      sendRegistrationCredentialsEmail({
+        toEmail: newUser.email,
+        name: newUser.name,
+        userId: newUser.userId,
+        password: tempUser.password,
+        referralCode: newUser.referralCode,
+      }).catch((mailError) => {
+        console.error("Failed to send registration credentials email:", mailError.message);
+      });
+
+      return response;
     } catch (err) {
       console.error(err);
       return errorResponse(res, "OTP verification failed", 500);

@@ -8,6 +8,14 @@ const getDailyMatchingCap = (user) => {
     : Number(matching.dailyCap || 50);
 };
 
+const isSameLocalDay = (a, b) => {
+  const first = new Date(a);
+  const second = new Date(b);
+  return first.getFullYear() === second.getFullYear()
+    && first.getMonth() === second.getMonth()
+    && first.getDate() === second.getDate();
+};
+
 const countActiveIds = async (rootId, side) => {
   const root = await UserModel.findById(rootId).select("leftChild rightChild");
   if (!root) return 0;
@@ -81,6 +89,8 @@ const creditMatchingIncome = async (user) => {
 
   const matched = Math.min(left, right, remainingCap / percent);
   const income = matched * percent;
+  const leftCarryAfter = left - matched;
+  const rightCarryAfter = right - matched;
 
   if (income > 0) {
     user.walletBalance += income;
@@ -89,10 +99,34 @@ const creditMatchingIncome = async (user) => {
     user.matchingIncome += income;
     user.todayMatchingIncome += income;
     user.todaypair += 1;
+    user.matchingIncomeHistory = user.matchingIncomeHistory || [];
+    const now = new Date();
+    const todayHistory = user.matchingIncomeHistory.find((entry) => isSameLocalDay(entry.date, now));
+    if (todayHistory) {
+      todayHistory.amount = Number(todayHistory.amount || 0) + income;
+      todayHistory.matchedBusiness = Number(todayHistory.matchedBusiness || 0) + matched;
+      todayHistory.leftCarryBefore = Math.max(Number(todayHistory.leftCarryBefore || 0), left);
+      todayHistory.rightCarryBefore = Math.max(Number(todayHistory.rightCarryBefore || 0), right);
+      todayHistory.leftCarryAfter = leftCarryAfter;
+      todayHistory.rightCarryAfter = rightCarryAfter;
+      todayHistory.percent = percent * 100;
+      todayHistory.date = now;
+    } else {
+      user.matchingIncomeHistory.push({
+        amount: income,
+        matchedBusiness: matched,
+        leftCarryBefore: left,
+        rightCarryBefore: right,
+        leftCarryAfter,
+        rightCarryAfter,
+        percent: percent * 100,
+        date: now,
+      });
+    }
   }
 
-  user.leftCarry = left - matched;
-  user.rightCarry = right - matched;
+  user.leftCarry = leftCarryAfter;
+  user.rightCarry = rightCarryAfter;
   await user.save();
 };
 
@@ -103,7 +137,7 @@ export const updateBinaryBusinessAndMatching = async (buyerId, businessAmount) =
 
   while (current?.placementParent) {
     const upliner = await UserModel.findById(current.placementParent).select(
-      "leftChild rightChild leftBusiness rightBusiness leftCarry rightCarry isActivated isBinaryStarted todaypair todayIncome walletBalance totalProfitEarned totalInvested matchingIncome todayMatchingIncome placementParent"
+      "leftChild rightChild leftBusiness rightBusiness leftCarry rightCarry isActivated isBinaryStarted todaypair todayIncome walletBalance totalProfitEarned totalInvested matchingIncome todayMatchingIncome matchingIncomeHistory placementParent"
     );
     if (!upliner) break;
 
@@ -124,7 +158,7 @@ export const updateBinaryBusinessAndMatching = async (buyerId, businessAmount) =
 
 export const runDailyMatchingForAllUsers = async () => {
   const users = await UserModel.find({ isActivated: true }).select(
-    "leftChild rightChild leftBusiness rightBusiness leftCarry rightCarry isActivated isBinaryStarted todaypair todayIncome walletBalance totalProfitEarned totalInvested matchingIncome todayMatchingIncome placementParent"
+    "leftChild rightChild leftBusiness rightBusiness leftCarry rightCarry isActivated isBinaryStarted todaypair todayIncome walletBalance totalProfitEarned totalInvested matchingIncome todayMatchingIncome matchingIncomeHistory placementParent"
   );
   for (const user of users) {
     const leftStats = await getLegStats(user._id, "left");

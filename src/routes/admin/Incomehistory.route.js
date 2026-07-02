@@ -7,6 +7,7 @@ const router = Router();
 router.get("/sponsor-income-history", requireAuth(["admin"]), incomehistoryController.proBonusHistory)
 router.get("/my-downline/:userId", requireAuth(["user", "admin"]), incomehistoryController.getUserNetwork)
 router.get("/user-income-report", requireAuth(["admin"]), incomehistoryController.userIncomeReport)
+router.get("/income-history-report", requireAuth(["admin"]), incomehistoryController.incomeHistoryReport)
 router.get("/user-ranks", requireAuth(["admin"]), getAllUsersRank)
 
 export { router as incomeHistory }

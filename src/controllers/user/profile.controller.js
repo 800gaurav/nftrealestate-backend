@@ -3,6 +3,50 @@ import { buildTree } from "../../utils/build-tree.js";
 import { errorResponse, successResponse } from "../../utils/api-response.js"
 import mongoose from "mongoose";
 
+const getLocalDateKey = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const mergeMatchingHistoryByDay = (history = []) => {
+  const merged = new Map();
+
+  history.forEach((entry) => {
+    const key = getLocalDateKey(entry.date);
+    if (!key) return;
+
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, {
+        date: entry.date,
+        amount: Number(entry.amount || 0),
+        matchedBusiness: Number(entry.matchedBusiness || 0),
+        leftCarryBefore: Number(entry.leftCarryBefore || 0),
+        rightCarryBefore: Number(entry.rightCarryBefore || 0),
+        leftCarryAfter: Number(entry.leftCarryAfter || 0),
+        rightCarryAfter: Number(entry.rightCarryAfter || 0),
+        percent: Number(entry.percent || 0),
+      });
+      return;
+    }
+
+    existing.amount += Number(entry.amount || 0);
+    existing.matchedBusiness += Number(entry.matchedBusiness || 0);
+    existing.leftCarryBefore = Math.max(existing.leftCarryBefore, Number(entry.leftCarryBefore || 0));
+    existing.rightCarryBefore = Math.max(existing.rightCarryBefore, Number(entry.rightCarryBefore || 0));
+    existing.leftCarryAfter = Number(entry.leftCarryAfter || existing.leftCarryAfter || 0);
+    existing.rightCarryAfter = Number(entry.rightCarryAfter || existing.rightCarryAfter || 0);
+    existing.percent = Number(entry.percent || existing.percent || 0);
+    existing.date = entry.date || existing.date;
+  });
+
+  return Array.from(merged.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
+};
+
 const profileController = {
   getLoggedinUserProfile: async (req, res) => {
     const user = await UserModel.findById(req.currentUser._id).select("-password");
@@ -53,7 +97,7 @@ const profileController = {
 
       const user = await UserModel.findOne(
         { userId },
-        "_id name email createdAt isActivated fundBalance walletBalance totalInvested stakingPrincipal roiPercent proBonusIncome roiIncome matchingIncome todayIncome referralBonus leftTeamSp rightTeamSp totalProfitEarned roiIncomeHistory proBonusHistory sponsor currentRank teamBusiness leftChild rightChild withdrawTRC_ADDRESS withdrawBEP_ADDRESS"
+        "_id name email createdAt isActivated fundBalance walletBalance totalInvested stakingPrincipal roiPercent proBonusIncome roiIncome matchingIncome teamBusinessIncome todayIncome referralBonus leftTeamSp rightTeamSp totalProfitEarned roiIncomeHistory proBonusHistory matchingIncomeHistory teamBusinessHistory sponsor currentRank teamBusiness leftChild rightChild withdrawTRC_ADDRESS withdrawBEP_ADDRESS"
       ).lean();
 
       if (!user) return res.status(404).json({ success: false, message: "User not found" });
@@ -65,16 +109,21 @@ const profileController = {
 
       // Count full placement subtree for left and right sides
       const countSubtree = async (rootId) => {
-        if (!rootId) return { total: 0, active: 0 };
-        let total = 0, active = 0, queue = [rootId];
+        if (!rootId) return { total: 0, active: 0, business: 0 };
+        let total = 0, active = 0, business = 0, queue = [rootId];
         while (queue.length > 0) {
-          const members = await UserModel.find({ placementParent: { $in: queue } }, "_id isActivated").lean();
+          const members = await UserModel.find(
+            { _id: { $in: queue } },
+            "_id isActivated totalInvested leftChild rightChild"
+          ).lean();
           if (!members.length) break;
+
           total += members.length;
           active += members.filter(m => m.isActivated).length;
-          queue = members.map(m => m._id);
+          business += members.reduce((sum, m) => sum + Number(m.totalInvested || 0), 0);
+          queue = members.flatMap(m => [m.leftChild, m.rightChild].filter(Boolean));
         }
-        return { total, active };
+        return { total, active, business };
       };
 
       const [leftTree, rightTree] = await Promise.all([
@@ -121,9 +170,9 @@ const profileController = {
           roiPercent: user.roiPercent || 0.5,
           rankRewardIncome: 0,
           currentRank: user.currentRank || null,
-          totalTeamBusiness,
-          leftTeamBusiness: user.leftTeamSp || 0,
-          rightTeamBusiness: user.rightTeamSp || 0,
+          totalTeamBusiness: leftTree.business + rightTree.business,
+          leftTeamBusiness: leftTree.business,
+          rightTeamBusiness: rightTree.business,
           leftTotal: leftTree.total,
           leftActive: leftTree.active,
           rightTotal: rightTree.total,
@@ -136,6 +185,7 @@ const profileController = {
           nonWorkingIncome: stakingIncome,
           sponsorIncome,
           proBonusIncome: sponsorIncome,
+          teamBusinessIncome: user.teamBusinessIncome || 0,
           stakingIncome,
           roiIncome: stakingIncome,
           matchingIncome,
@@ -143,6 +193,8 @@ const profileController = {
           totalProfitEarned: user.totalProfitEarned || sponsorIncome + stakingIncome + matchingIncome,
           roiIncomeHistory: user.roiIncomeHistory || [],
           proBonusHistory: user.proBonusHistory || [],
+          matchingIncomeHistory: mergeMatchingHistoryByDay(user.matchingIncomeHistory || []),
+          teamBusinessHistory: user.teamBusinessHistory || [],
           sponsor: user.sponsor || null,
           withdrawTRC_ADDRESS: user.withdrawTRC_ADDRESS || "",
           withdrawBEP_ADDRESS: user.withdrawBEP_ADDRESS || "",

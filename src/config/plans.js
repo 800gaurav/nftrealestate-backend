@@ -52,7 +52,7 @@ const SERVICE_PLANS = [
     "rank": "Platinum",
     "title": "Platinum Package",
     "price": 100,
-    "dailyPercent": 1,
+    "dailyPercent": 0.5,
     "dailyROI": "1%",
     "referral": "10%",
     "features": [
@@ -99,12 +99,42 @@ const INCOME_PLAN = {
 };
 
 const REWARD_RANKS = [
-  { "level": "1st", "rank": "Bronze",     "business": 1000,   "reward": "Welcome Kit" },
-  { "level": "2nd", "rank": "Silver",     "business": 5000,   "reward": "Android Mobile" },
-  { "level": "3rd", "rank": "Gold",       "business": 20000,  "reward": "Bangkok Tour" },
-  { "level": "4th", "rank": "Diamond",    "business": 50000,  "reward": "Thailand 3N/4 Day + Car + Foreign D/P" },
-  { "level": "5th", "rank": "Crown",      "business": 100000, "reward": "Fortuner" },
-  { "level": "6th", "rank": "Ambassador", "business": 500000, "reward": "2% Royalty T/C" }
+  {
+    "level": "1st",
+    "rank": "Bronze",
+    "business": 1000,
+    "reward": "Welcome Kit"
+  },
+  {
+    "level": "2nd",
+    "rank": "Silver",
+    "business": 5000,
+    "reward": "Android Mobile"
+  },
+  {
+    "level": "3rd",
+    "rank": "Gold",
+    "business": 20000,
+    "reward": "Bangkok Tour"
+  },
+  {
+    "level": "4th",
+    "rank": "Diamond",
+    "business": 50000,
+    "reward": "Thailand 3N/4 Day + Car + Foreign D/P"
+  },
+  {
+    "level": "5th",
+    "rank": "Crown",
+    "business": 100000,
+    "reward": "Fortuner"
+  },
+  {
+    "level": "6th",
+    "rank": "Ambassador",
+    "business": 500000,
+    "reward": "2% Royalty T/C"
+  }
 ];
 
 const SERVICES = [

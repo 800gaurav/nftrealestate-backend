@@ -51,6 +51,18 @@ const userSchema = new mongoose.Schema(
     todaypair: { type: Number, default: 0 },
     matchingIncome: { type: Number, default: 0 },
     todayMatchingIncome: { type: Number, default: 0 },
+    matchingIncomeHistory: [
+      {
+        amount: { type: Number, default: 0 },
+        matchedBusiness: { type: Number, default: 0 },
+        leftCarryBefore: { type: Number, default: 0 },
+        rightCarryBefore: { type: Number, default: 0 },
+        leftCarryAfter: { type: Number, default: 0 },
+        rightCarryAfter: { type: Number, default: 0 },
+        percent: { type: Number, default: 0 },
+        date: { type: Date, default: Date.now },
+      }
+    ],
     
     // activation & plan
 
@@ -88,6 +100,7 @@ const userSchema = new mongoose.Schema(
    teamBusinessHistory: [
      {
        fromUser: { type: String },
+       referredBy: { type: String },
        baseAmount: { type: Number, default: 0 },
        amount: { type: Number, default: 0 },
        date: { type: Date, default: Date.now },
