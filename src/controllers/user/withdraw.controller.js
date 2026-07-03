@@ -286,8 +286,8 @@ export const approveWithdrawal = async (req, res) => {
       address: withdraw.toAddress,
       // network: "BEP20",
       network: withdraw.coin === "USDT.TRC20" ? "TRC20" : "BEP20",
-      // callback_url: "https://backend.jupitertoken.us/api/v1/user/oxapay/payment/paymentstatus",
-      callback_url: "https://backend.jupitertoken.us/api/v1/user/oxapay/payment/withdraw-callback",
+      // callback_url: "https://node.nftrealestate.us/api/v1/user/oxapay/payment/paymentstatus",
+      callback_url: "https://node.nftrealestate.us/api/v1/user/oxapay/payment/withdraw-callback",
       reference_id: withdraw._id.toString(),
     };
 

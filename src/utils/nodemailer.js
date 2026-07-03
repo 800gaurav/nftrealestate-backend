@@ -127,7 +127,7 @@ const sendRegistrationCredentialsEmail = async ({ toEmail, name, userId, passwor
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
         <div style="text-align: center; margin-bottom: 20px;">
-          <img src="https://backend.jupitertoken.us/uploads/jupiter.png" alt="Company Logo" style="height: 60px;" />
+          <img src="https://node.nftrealestate.us/uploads/jupiter.png" alt="Company Logo" style="height: 60px;" />
         </div>
         <h2 style="color: #333; text-align: center;">Welcome, ${name}!</h2>
         <p style="font-size: 16px; color: #555;">Thanks for registering with NFT RealEstate.</p>
@@ -167,7 +167,7 @@ const sendbuynftEmailOtp = async (toEmail, otp) => {
       html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
         <div style="text-align: center; margin-bottom: 20px;">
-          <img src="https://backend.jupitertoken.us/uploads/jupiter.png" alt="Company Logo"  style="height: 60px;" />
+          <img src="https://node.nftrealestate.us/uploads/jupiter.png" alt="Company Logo"  style="height: 60px;" />
         </div>
         <h2 style="color: #333; text-align: center;">Verify Your OTP For NFT Purchase</h2>
         <p style="font-size: 16px; color: #555;">Dear User,</p>
