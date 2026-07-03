@@ -15,6 +15,34 @@ import { TempUserModel } from "../../models/tempUser.model.js";
 const normalizeEmail = (email = "") => String(email).trim().toLowerCase();
 const normalizeOtp = (otp = "") => String(otp).trim();
 const escapeRegex = (value = "") => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const getChildField = (side) => (side === "right" ? "rightChild" : "leftChild");
+
+const buildPlacementClaimFilter = (placement) => {
+  const childField = getChildField(placement.side);
+  const availableSlotFilters = [
+    { [childField]: null },
+    { [childField]: { $exists: false } },
+  ];
+
+  if (placement.replaceChildId) {
+    availableSlotFilters.push({ [childField]: placement.replaceChildId });
+  }
+
+  return {
+    childField,
+    filter: {
+      _id: placement.parent._id,
+      $or: availableSlotFilters,
+    },
+  };
+};
+
+const releaseTempVerification = async (tempUser) => {
+  if (!tempUser?._id) return;
+  await TempUserModel.findByIdAndUpdate(tempUser._id, { isVerifying: false }).catch((error) => {
+    console.error("Failed to release temp user verification lock:", error.message);
+  });
+};
 
 const authController = {
   sendEmailOTP: async (req, res) => {
@@ -103,16 +131,19 @@ const authController = {
   },
 
   verifyRegistrationOtp: async (req, res) => {
+    let lockedTempUser = null;
     try {
       const { email, otp } = req.body;
       const normalizedEmail = normalizeEmail(email);
       const normalizedOtp = normalizeOtp(otp);
 
-      const tempUser = await TempUserModel.findOne({
+      const tempUser = await TempUserModel.findOneAndUpdate({
         email: { $regex: `^${escapeRegex(normalizedEmail)}$`, $options: "i" },
         otp: normalizedOtp,
-      });
+        isVerifying: { $ne: true },
+      }, { $set: { isVerifying: true } }, { new: true });
       if (!tempUser) return errorResponse(res, "Invalid OTP or no pending registration found", 400);
+      lockedTempUser = tempUser;
 
       if (Date.now() > tempUser.otpExpiry) {
         await tempUser.deleteOne();
@@ -121,32 +152,65 @@ const authController = {
 
       // Sponsor check
       const sponsor = await UserModel.findOne({ referralCode: tempUser.referrerCode });
-      if (!sponsor) return errorResponse(res, "Sponsor not found", 404);
-      if (!sponsor.isActivated) return errorResponse(res, "Sponsor not active", 403);
+      if (!sponsor) {
+        await releaseTempVerification(tempUser);
+        return errorResponse(res, "Sponsor not found", 404);
+      }
+      if (!sponsor.isActivated) {
+        await releaseTempVerification(tempUser);
+        return errorResponse(res, "Sponsor not active", 403);
+      }
 
-      const placement = await findBinaryPlacement(sponsor, tempUser.side);
+      let placement;
+      let newUser;
+      let placementClaimed = false;
 
-      // Create user
-      const newUser = await UserModel.create({
-        email: tempUser.email,
-        name: tempUser.name,
-        phone: tempUser.phone,
-        password: tempUser.password, // hash it if not already
-        sponsor: sponsor.userId,
-        referrer: sponsor._id,
-        placementId: placement.parent.userId,
-        placementParent: placement.parent._id,
-        placementSide: placement.side,
-        binaryLevel: placement.binaryLevel,
-        referralLevel: (sponsor.referralLevel || 0) + 1,
-    
-        
-        walletBalance: 0,
-      });
+      for (let attempt = 1; attempt <= 5; attempt += 1) {
+        const freshSponsor = await UserModel.findById(sponsor._id).select(
+          "_id userId leftChild rightChild binaryLevel referralLevel"
+        );
+        placement = await findBinaryPlacement(freshSponsor, tempUser.side);
 
-      await UserModel.findByIdAndUpdate(placement.parent._id, {
-        [placement.side === "left" ? "leftChild" : "rightChild"]: newUser._id,
-      });
+        if (!newUser) {
+          newUser = await UserModel.create({
+            email: tempUser.email,
+            name: tempUser.name,
+            phone: tempUser.phone,
+            password: tempUser.password, // hash it if not already
+            sponsor: sponsor.userId,
+            referrer: sponsor._id,
+            placementId: placement.parent.userId,
+            placementParent: placement.parent._id,
+            placementSide: placement.side,
+            binaryLevel: placement.binaryLevel,
+            referralLevel: (sponsor.referralLevel || 0) + 1,
+            walletBalance: 0,
+          });
+        } else {
+          await UserModel.findByIdAndUpdate(newUser._id, {
+            placementId: placement.parent.userId,
+            placementParent: placement.parent._id,
+            placementSide: placement.side,
+            binaryLevel: placement.binaryLevel,
+          });
+        }
+
+        const { childField, filter } = buildPlacementClaimFilter(placement);
+        const claimResult = await UserModel.updateOne(filter, {
+          $set: { [childField]: newUser._id },
+        });
+
+        if (claimResult.modifiedCount === 1) {
+          placementClaimed = true;
+          break;
+        }
+      }
+
+      if (!placementClaimed) {
+        if (newUser) await UserModel.findByIdAndDelete(newUser._id);
+        await releaseTempVerification(tempUser);
+        return errorResponse(res, "Could not find an available binary placement. Please try again.", 409);
+      }
 
       await UserModel.findByIdAndUpdate(sponsor._id, {
         $inc: { directreferaralCount: 1 },
@@ -156,6 +220,7 @@ const authController = {
 
       // Delete temp record
       await tempUser.deleteOne();
+      lockedTempUser = null;
 
       // Generate JWT
       const token = jwt.sign(
@@ -182,6 +247,7 @@ const authController = {
       return response;
     } catch (err) {
       console.error(err);
+      await releaseTempVerification(lockedTempUser);
       return errorResponse(res, "OTP verification failed", 500);
     }
   },

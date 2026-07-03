@@ -10,6 +10,7 @@ const TempUserSchema = new mongoose.Schema({
   side: { type: String, enum: ["left", "right"], default: "left" },
   otp: String,
   otpExpiry: Date,
+  isVerifying: { type: Boolean, default: false },
 }, { timestamps: true });
 
 export const TempUserModel = mongoose.model("TempUser", TempUserSchema);
