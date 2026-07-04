@@ -75,6 +75,36 @@ const profileController = {
         ? await UserModel.findById(user.rightChild).select("_id userId name isActivated totalInvested walletBalance leftTeamSp rightTeamSp placementSide leftChild rightChild createdAt")
         : null;
 
+      const countSubtree = async (rootId) => {
+        if (!rootId) return { total: 0, active: 0 };
+        let total = 0, active = 0, queue = [rootId];
+        while (queue.length > 0) {
+          const members = await UserModel.find(
+            { _id: { $in: queue } },
+            "_id isActivated leftChild rightChild"
+          ).lean();
+          if (!members.length) break;
+
+          total += members.length;
+          active += members.filter(m => m.isActivated).length;
+          queue = members.flatMap(m => [m.leftChild, m.rightChild].filter(Boolean));
+        }
+        return { total, active };
+      };
+
+      const [
+        userLeftTree, userRightTree,
+        leftChildLeftTree, leftChildRightTree,
+        rightChildLeftTree, rightChildRightTree
+      ] = await Promise.all([
+        countSubtree(user.leftChild),
+        countSubtree(user.rightChild),
+        countSubtree(leftChild?.leftChild),
+        countSubtree(leftChild?.rightChild),
+        countSubtree(rightChild?.leftChild),
+        countSubtree(rightChild?.rightChild),
+      ]);
+
       return res.json({
         success: true,
         data: {
@@ -82,7 +112,25 @@ const profileController = {
           isActivated: user.isActivated, totalInvested: user.totalInvested,
           walletBalance: user.walletBalance, leftTeamSp: user.leftTeamSp,
           rightTeamSp: user.rightTeamSp, placementSide: user.placementSide,
-          createdAt: user.createdAt, leftChild, rightChild,
+          createdAt: user.createdAt,
+          leftTotal: userLeftTree.total,
+          leftActive: userLeftTree.active,
+          rightTotal: userRightTree.total,
+          rightActive: userRightTree.active,
+          leftChild: leftChild ? {
+            ...leftChild.toObject(),
+            leftTotal: leftChildLeftTree.total,
+            leftActive: leftChildLeftTree.active,
+            rightTotal: leftChildRightTree.total,
+            rightActive: leftChildRightTree.active,
+          } : null,
+          rightChild: rightChild ? {
+            ...rightChild.toObject(),
+            leftTotal: rightChildLeftTree.total,
+            leftActive: rightChildLeftTree.active,
+            rightTotal: rightChildRightTree.total,
+            rightActive: rightChildRightTree.active,
+          } : null,
         }
       });
     } catch (error) {
