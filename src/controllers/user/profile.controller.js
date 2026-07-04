@@ -78,6 +78,7 @@ const profileController = {
       const countSubtree = async (rootId) => {
         if (!rootId) return { total: 0, active: 0 };
         let total = 0, active = 0, queue = [rootId];
+        const visited = new Set();
         while (queue.length > 0) {
           const members = await UserModel.find(
             { _id: { $in: queue } },
@@ -87,7 +88,16 @@ const profileController = {
 
           total += members.length;
           active += members.filter(m => m.isActivated).length;
-          queue = members.flatMap(m => [m.leftChild, m.rightChild].filter(Boolean));
+          
+          const nextQueue = [];
+          for (const m of members) {
+            const idStr = String(m._id);
+            if (visited.has(idStr)) continue;
+            visited.add(idStr);
+            if (m.leftChild) nextQueue.push(m.leftChild);
+            if (m.rightChild) nextQueue.push(m.rightChild);
+          }
+          queue = nextQueue;
         }
         return { total, active };
       };
@@ -159,6 +169,7 @@ const profileController = {
       const countSubtree = async (rootId) => {
         if (!rootId) return { total: 0, active: 0, business: 0 };
         let total = 0, active = 0, business = 0, queue = [rootId];
+        const visited = new Set();
         while (queue.length > 0) {
           const members = await UserModel.find(
             { _id: { $in: queue } },
@@ -169,7 +180,16 @@ const profileController = {
           total += members.length;
           active += members.filter(m => m.isActivated).length;
           business += members.reduce((sum, m) => sum + Number(m.totalInvested || 0), 0);
-          queue = members.flatMap(m => [m.leftChild, m.rightChild].filter(Boolean));
+          
+          const nextQueue = [];
+          for (const m of members) {
+            const idStr = String(m._id);
+            if (visited.has(idStr)) continue;
+            visited.add(idStr);
+            if (m.leftChild) nextQueue.push(m.leftChild);
+            if (m.rightChild) nextQueue.push(m.rightChild);
+          }
+          queue = nextQueue;
         }
         return { total, active, business };
       };

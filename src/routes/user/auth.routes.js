@@ -2,6 +2,7 @@ import { Router } from "express";
 
 import { authController } from "../../controllers/user/auth.controller.js";
 import { currentUser } from "../../middlewares/current-user.js";
+import { requireAuth } from "../../middlewares/require-auth.js";
 import { testCalculateAllRewards } from "../../helper/getUpLines.js";
 
 const router = Router();
@@ -20,6 +21,6 @@ router.get("/get-profile", currentUser, authController.getProfile);
 
 
 //GewardIncome Test
-router.post("/calculate-reward-income", testCalculateAllRewards)
+router.post("/calculate-reward-income", requireAuth(["admin"]), testCalculateAllRewards)
 
 export { router as userAuthRouter }
