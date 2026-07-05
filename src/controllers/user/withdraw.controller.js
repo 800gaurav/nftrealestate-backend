@@ -16,6 +16,39 @@ const GENERAL_API_KEY = process.env.GENERAL_API_KEY;
 
 const round2 = (v) => Math.round((v + Number.EPSILON) * 100) / 100;
 
+const getWithdrawalSplit = (user, amount) => {
+  const walletDeducted = round2(Math.min(Number(user.walletBalance || 0), amount));
+  const fundDeducted = round2(amount - walletDeducted);
+  return { walletDeducted, fundDeducted };
+};
+
+const refundWithdrawalAmount = async (withdraw) => {
+  const user = await UserModel.findById(withdraw.userId);
+  if (!user) return null;
+
+  const splitTotal = round2(Number(withdraw.walletDeducted || 0) + Number(withdraw.fundDeducted || 0));
+  const hasSplit = splitTotal > 0;
+  const walletRefund = hasSplit ? Number(withdraw.walletDeducted || 0) : Number(withdraw.amount || 0);
+  const fundRefund = hasSplit ? Number(withdraw.fundDeducted || 0) : 0;
+
+  user.walletBalance = round2(Number(user.walletBalance || 0) + walletRefund);
+  user.fundBalance = round2(Number(user.fundBalance || 0) + fundRefund);
+
+  if (fundRefund > 0) {
+    user.fundWalletHistory = user.fundWalletHistory || [];
+    user.fundWalletHistory.push({
+      type: "credit",
+      amount: fundRefund,
+      note: "Withdrawal refund",
+      balanceAfter: user.fundBalance,
+      date: new Date(),
+    });
+  }
+
+  await user.save();
+  return user;
+};
+
 export const requestWithdrawal = async (req, res) => {
   try {
     const currentUser = req.currentUser; // from auth middleware
@@ -24,13 +57,18 @@ export const requestWithdrawal = async (req, res) => {
     const { amount, coin } = req.body;
     if (!amount || !coin)
       return errorResponse(res, "Amount and coin are required", 400);
+
+    const withdrawAmount = Number(amount);
+    if (!Number.isFinite(withdrawAmount) || withdrawAmount <= 0) {
+      return errorResponse(res, "Invalid withdrawal amount", 400);
+    }
     
-    const user = await UserModel.findById(currentUser._id).select("+walletBalance +email +withdrawTRC_ADDRESS +withdrawBEP_ADDRESS +totalInvested");
+    const user = await UserModel.findById(currentUser._id).select("+walletBalance +fundBalance +email +withdrawTRC_ADDRESS +withdrawBEP_ADDRESS +totalInvested");
     if (!user) return errorResponse(res, "User not found", 404);
     
     // Business rules
     if (user.referralBonus === true && user.withdrawUnlock === false) {
-    if (amount < 30) {
+    if (withdrawAmount < 30) {
         return errorResponse(
             res,
             "You have received a $20 referral bonus. To withdraw, you must earn at least $10 more. Minimum withdrawal is $30.",
@@ -42,7 +80,7 @@ export const requestWithdrawal = async (req, res) => {
     user.withdrawUnlock = true;
     await user.save();
 }
-    if (amount < 5) return errorResponse(res, "Minimum withdrawal amount is $5", 400);
+    if (withdrawAmount < 5) return errorResponse(res, "Minimum withdrawal amount is $5", 400);
 
     // Find user and balance
 
@@ -50,8 +88,8 @@ export const requestWithdrawal = async (req, res) => {
     const existingPending = await WithdrawModel.findOne({ userId: user._id, status: "pending" });
     if (existingPending) return errorResponse(res, "You already have a pending withdrawal request", 400);
 
-    // Check if user has sufficient balance
-    if (user.walletBalance < amount) {
+    const withdrawableBalance = round2(Number(user.walletBalance || 0) + Number(user.fundBalance || 0));
+    if (withdrawableBalance < withdrawAmount) {
       return errorResponse(res, "Insufficient balance", 400);
     }
 
@@ -80,22 +118,36 @@ export const requestWithdrawal = async (req, res) => {
 
     // Calculate flat service charge
     const serviceChargeRate = 0.10; // 10%
-    const serviceCharge = round2(amount * serviceChargeRate);
-    const payableAmount = round2(amount - serviceCharge);
+    const serviceCharge = round2(withdrawAmount * serviceChargeRate);
+    const payableAmount = round2(withdrawAmount - serviceCharge);
 
-    // Deduct immediately from user's walletBalance
-    user.walletBalance = round2(user.walletBalance - amount);
+    const { walletDeducted, fundDeducted } = getWithdrawalSplit(user, withdrawAmount);
+
+    user.walletBalance = round2(Number(user.walletBalance || 0) - walletDeducted);
+    user.fundBalance = round2(Number(user.fundBalance || 0) - fundDeducted);
+    if (fundDeducted > 0) {
+      user.fundWalletHistory = user.fundWalletHistory || [];
+      user.fundWalletHistory.push({
+        type: "debit",
+        amount: fundDeducted,
+        note: "Withdrawal request",
+        balanceAfter: user.fundBalance,
+        date: new Date(),
+      });
+    }
     await user.save();
 
     // Save withdraw record
     const withdraw = await WithdrawModel.create({
       userId: user._id,
       userUniqueId: user.userId,
-      amount,
+      amount: withdrawAmount,
       coin,
       toAddress,
       serviceCharge,
       payableAmount,
+      walletDeducted,
+      fundDeducted,
       status: "pending",
       remarks: "Withdrawal request created"
     });
@@ -218,11 +270,9 @@ export const callbackpaymentstatus = async (req, res) => {
 
       withdraw.status = "rejected";
 
-      const user = await UserModel.findById(withdraw.userId);
+      const user = await refundWithdrawalAmount(withdraw);
 
       if (user) {
-        user.walletBalance = round2(user.walletBalance + withdraw.amount);
-        await user.save();
         console.log("💰 Refunded user:", user._id);
       }
     }
@@ -323,6 +373,7 @@ export const approveWithdrawal = async (req, res) => {
       }
       else if (statusFromOxa === "failed" || statusFromOxa === "canceled") {
         withdraw.status = "rejected";
+        await refundWithdrawalAmount(withdraw);
       }
       else {
         withdraw.status = "pending"; // processing
@@ -338,12 +389,7 @@ export const approveWithdrawal = async (req, res) => {
       console.error("❌ OxaPay withdraw error:", oxaErr.response?.data || oxaErr.message);
 
       // On API failure - refund user
-      const user = await UserModel.findById(withdraw.userId);
-      if (user) {
-
-        user.walletBalance = round2(user.walletBalance + withdraw.amount);
-        await user.save();
-      }
+      await refundWithdrawalAmount(withdraw);
 
       withdraw.status = "invalid";
       withdraw.remarks = `OxaPay error: ${oxaErr.response?.data
@@ -383,15 +429,8 @@ export const rejectWithdrawal = async (req, res) => {
     if (!withdraw) return errorResponse(res, "Withdrawal request not found", 404);
     if (withdraw.status !== "pending") return errorResponse(res, "Request already processed", 400);
 
-    // Refund user
-    // const user = await UserModel.findOne({ userId: withdraw.userId });
-    const user = await UserModel.findById(withdraw.userId);
+    const user = await refundWithdrawalAmount(withdraw);
     if (!user) return errorResponse(res, "User not found for refund", 404);
-
-    // Refund back to walletBalance
-    user.walletBalance = round2(user.walletBalance + withdraw.amount);
-    // user.totalInvested = round2(user.totalInvested + withdraw.amount); // optional: only if you want invested balance restored
-    await user.save();
 
     // Mark withdrawal rejected
     withdraw.status = "rejected";

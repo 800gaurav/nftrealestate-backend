@@ -64,6 +64,7 @@ const confirmBuyNft = async (req, res) => {
     if (!SERVICE_PLANS.some(plan => plan.price === nft.price)) {
       return res.status(400).json({ success: false, message: "Invalid service package" });
     }
+    const selectedPackage = SERVICE_PLANS.find(plan => Number(plan.price) === Number(nft.price));
 
     const referrar = await UserModel.findById(user.referrer);
     if (String(user.txnpass || "").trim() !== String(txnpass || "").trim())
@@ -79,12 +80,20 @@ const confirmBuyNft = async (req, res) => {
       const packageAmount = Number(nft.price || 0);
       const stakingAmount = round2((packageAmount * Number(INCOME_PLAN.joining.percentOfJoiningAmount || 40)) / 100);
 
-      user.fundBalance -= packageAmount;
+      user.fundBalance = round2(user.fundBalance - packageAmount);
       user.fundWalletHistory = user.fundWalletHistory || [];
       user.fundWalletHistory.push({
         type: "debit",
         amount: packageAmount,
         note: `Package purchase: ${nft.title || nft._id}`,
+        balanceAfter: user.fundBalance,
+        date: new Date(),
+      });
+      user.fundBalance = round2(user.fundBalance + stakingAmount);
+      user.fundWalletHistory.push({
+        type: "credit",
+        amount: stakingAmount,
+        note: `40% staking amount credited from package: ${nft.title || nft._id}`,
         balanceAfter: user.fundBalance,
         date: new Date(),
       });

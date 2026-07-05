@@ -1,6 +1,14 @@
 import { INCOME_PLAN, SERVICE_PLANS } from "../config/plans.js";
 import { UserModel } from "../models/user.model.js";
 
+const isStakingWorkingDay = (date = new Date()) => {
+  const day = new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    timeZone: "Asia/Kolkata",
+  }).format(date);
+  return day !== "Sat" && day !== "Sun";
+};
+
 const getStakingPrincipal = (user) => {
   if (Number(user.stakingPrincipal || 0) > 0) return Number(user.stakingPrincipal);
   return (Number(user.totalInvested || 0) * Number(INCOME_PLAN.joining?.percentOfJoiningAmount || 40)) / 100;
@@ -22,6 +30,11 @@ function getStakingRate(user) {
 }
 
 export const calculateDailyIncome = async () => {
+  if (!isStakingWorkingDay()) {
+    console.log("Staking income skipped: Saturday/Sunday off.");
+    return;
+  }
+
   const users = await UserModel.find({
     $or: [{ stakingPrincipal: { $gt: 0 } }, { totalInvested: { $gt: 0 } }],
   });

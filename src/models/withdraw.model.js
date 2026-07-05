@@ -35,6 +35,14 @@ type: String,
     type: Number,
     required: true
   },
+  walletDeducted: {
+    type: Number,
+    default: 0
+  },
+  fundDeducted: {
+    type: Number,
+    default: 0
+  },
   txnId: {
     type: String
   },

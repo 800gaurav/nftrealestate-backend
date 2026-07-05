@@ -164,12 +164,20 @@ export const initiatePayment = async (req, res) => {
         return res.status(400).json({ success: false, message: "Insufficient Fund Wallet balance." });
       }
 
-      user.fundBalance -= packageAmount;
+      user.fundBalance = round2(user.fundBalance - packageAmount);
       user.fundWalletHistory = user.fundWalletHistory || [];
       user.fundWalletHistory.push({
         type: "debit",
         amount: packageAmount,
         note: `Package purchase: ${selectedPackage.title || selectedPackage.code}`,
+        balanceAfter: user.fundBalance,
+        date: new Date(),
+      });
+      user.fundBalance = round2(user.fundBalance + stakingAmount);
+      user.fundWalletHistory.push({
+        type: "credit",
+        amount: stakingAmount,
+        note: `40% staking amount credited from package: ${selectedPackage.title || selectedPackage.code}`,
         balanceAfter: user.fundBalance,
         date: new Date(),
       });
@@ -287,7 +295,15 @@ export const oxapayCallback = async (req, res) => {
       const isPackagePayment = existingDeposit.purpose === "package";
       const update = isPackagePayment
         ? {
-            $inc: { totalInvested: packageAmount, stakingPrincipal: stakingAmount, walletBalance: stakingAmount },
+            $inc: { totalInvested: packageAmount, stakingPrincipal: stakingAmount, fundBalance: stakingAmount },
+            $push: {
+              fundWalletHistory: {
+                type: "credit",
+                amount: stakingAmount,
+                note: `40% staking amount credited from package: ${existingDeposit.packageTitle || existingDeposit.packageCode || "package"}`,
+                date: new Date(),
+              },
+            },
             $set: { isActivated: true, stopROIIncome: false, roiPercent: planDailyPercent }
           }
         : {
