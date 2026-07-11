@@ -89,7 +89,7 @@ const authController = {
 
   register: async (req, res) => {
     try {
-      const { referrerCode, name, email, phone, password, side = "left" } = req.body;
+      const { referrerCode, name, email, phone, password, side = "left", placementParentId } = req.body;
       if (!name || !email || !phone || !password || !referrerCode)
         return errorResponse(res, "All fields are required", 400);
 
@@ -117,7 +117,7 @@ const authController = {
         referrerCode,
       });
       await TempUserModel.create(
-        { name, email: normalizedEmail, phone, password, referrerCode, side: placementSide, otp, otpExpiry }
+        { name, email: normalizedEmail, phone, password, referrerCode, side: placementSide, placementParentId: placementParentId || null, otp, otpExpiry }
       );
 
       // Send OTP email
@@ -161,15 +161,38 @@ const authController = {
         return errorResponse(res, "Sponsor not active", 403);
       }
 
+      const getRequestedPlacement = async () => {
+        if (!tempUser.placementParentId) return null;
+        const parent = await UserModel.findById(tempUser.placementParentId).select(
+          "_id userId leftChild rightChild binaryLevel"
+        );
+        if (!parent) throw new Error("Requested placement parent not found");
+
+        const childField = getChildField(tempUser.side);
+        if (parent[childField]) throw new Error("Requested placement slot is already filled");
+
+        return {
+          parent,
+          side: tempUser.side,
+          binaryLevel: Number(parent.binaryLevel || 0) + 1,
+          exact: true,
+        };
+      };
+
       let placement;
       let newUser;
       let placementClaimed = false;
 
-      for (let attempt = 1; attempt <= 5; attempt += 1) {
-        const freshSponsor = await UserModel.findById(sponsor._id).select(
-          "_id userId leftChild rightChild binaryLevel referralLevel"
-        );
-        placement = await findBinaryPlacement(freshSponsor, tempUser.side);
+      const maxPlacementAttempts = tempUser.placementParentId ? 1 : 5;
+      for (let attempt = 1; attempt <= maxPlacementAttempts; attempt += 1) {
+        if (tempUser.placementParentId) {
+          placement = await getRequestedPlacement();
+        } else {
+          const freshSponsor = await UserModel.findById(sponsor._id).select(
+            "_id userId leftChild rightChild binaryLevel referralLevel"
+          );
+          placement = await findBinaryPlacement(freshSponsor, tempUser.side);
+        }
 
         if (!newUser) {
           newUser = await UserModel.create({
