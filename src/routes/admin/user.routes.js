@@ -3,6 +3,7 @@ import { requireAuth } from "../../middlewares/require-auth.js";
 import { userController } from "../../controllers/admin/user.controller.js";
 import { getBanner, updateBanner } from "../../controllers/admin/banner.controller.js";
 import { getAdminSettings, getPublicSettings, updateAdminSettings } from "../../controllers/admin/app-setting.controller.js";
+import upload from "../../utils/multer.js";
 
 const router = Router();
 
@@ -28,7 +29,7 @@ router.post("/run-income-job", requireAuth(["admin"]), userController.runDailyJo
 
 router.get("/get-plans", userController.getPlans)
 router.put("/update-plans", requireAuth(["admin"]), userController.updatePlans)
-router.post("/update-banner", requireAuth(["admin"]), updateBanner);
+router.post("/update-banner", requireAuth(["admin"]), upload.single("image"), updateBanner);
 router.get("/settings", requireAuth(["admin"]), getAdminSettings);
 router.put("/settings", requireAuth(["admin"]), updateAdminSettings);
 

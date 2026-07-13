@@ -11,9 +11,11 @@ import bcrypt from 'bcryptjs';
 import { currentUser } from "../../middlewares/current-user.js";
 
 import { TempUserModel } from "../../models/tempUser.model.js";
+import mongoose from "mongoose";
 
 const normalizeEmail = (email = "") => String(email).trim().toLowerCase();
 const normalizeOtp = (otp = "") => String(otp).trim();
+const normalizePlacementParentId = (placementParentId = "") => String(placementParentId).trim();
 const escapeRegex = (value = "") => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const getChildField = (side) => (side === "right" ? "rightChild" : "leftChild");
 
@@ -163,20 +165,28 @@ const authController = {
 
       const getRequestedPlacement = async () => {
         if (!tempUser.placementParentId) return null;
-        const parent = await UserModel.findById(tempUser.placementParentId).select(
+
+        const placementParentId = normalizePlacementParentId(tempUser.placementParentId);
+
+        const parent = await UserModel.findOne({ userId: placementParentId }).select(
           "_id userId leftChild rightChild binaryLevel"
         );
+
         if (!parent) throw new Error("Requested placement parent not found");
 
         const childField = getChildField(tempUser.side);
-        if (parent[childField]) throw new Error("Requested placement slot is already filled");
+        if (!parent[childField]) {
+          return {
+            parent,
+            side: tempUser.side,
+            binaryLevel: Number(parent.binaryLevel || 0) + 1,
+            exact: true,
+          };
+        }
 
-        return {
-          parent,
-          side: tempUser.side,
-          binaryLevel: Number(parent.binaryLevel || 0) + 1,
-          exact: true,
-        };
+        // If the requested side already has a child, place the user deeper in that subtree.
+        const fallbackPlacement = await findBinaryPlacement(parent, tempUser.side);
+        return fallbackPlacement;
       };
 
       let placement;

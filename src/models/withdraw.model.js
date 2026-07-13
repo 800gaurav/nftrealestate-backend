@@ -1,4 +1,4 @@
-import mongoose from 'mongoose'
+﻿import mongoose from 'mongoose'
 
 const withdrawSchema = new mongoose.Schema({
   // userId: {
@@ -35,6 +35,7 @@ type: String,
     type: Number,
     required: true
   },
+  stakingDeducted: { type: Number, default: 0 },
   walletDeducted: {
     type: Number,
     default: 0
@@ -42,6 +43,10 @@ type: String,
   fundDeducted: {
     type: Number,
     default: 0
+  },
+  paymentMethod: {
+    type: String,
+    enum: ['oxapay', 'manual'],
   },
   txnId: {
     type: String

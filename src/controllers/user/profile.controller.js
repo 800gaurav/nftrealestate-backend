@@ -155,7 +155,7 @@ const profileController = {
 
       const user = await UserModel.findOne(
         { userId },
-        "_id name email createdAt isActivated fundBalance walletBalance totalInvested stakingPrincipal roiPercent proBonusIncome roiIncome matchingIncome teamBusinessIncome todayIncome referralBonus leftTeamSp rightTeamSp totalProfitEarned roiIncomeHistory proBonusHistory matchingIncomeHistory teamBusinessHistory sponsor currentRank teamBusiness leftChild rightChild withdrawTRC_ADDRESS withdrawBEP_ADDRESS"
+        "_id name email createdAt isActivated fundBalance walletBalance stakingWallet totalInvested stakingPrincipal roiPercent proBonusIncome roiIncome matchingIncome teamBusinessIncome todayIncome referralBonus leftBusiness rightBusiness totalProfitEarned roiIncomeHistory proBonusHistory matchingIncomeHistory teamBusinessHistory sponsor currentRank teamBusiness leftChild rightChild withdrawTRC_ADDRESS withdrawBEP_ADDRESS"
       ).lean();
 
       if (!user) return res.status(404).json({ success: false, message: "User not found" });
@@ -233,6 +233,7 @@ const profileController = {
           isActivated: user.isActivated,
           fundBalance: user.fundBalance,
           walletBalance: user.walletBalance,
+          stakingWallet: user.stakingWallet || 0,
           totalInvested: user.totalInvested,
           stakingPrincipal: user.stakingPrincipal || 0,
           roiPercent: user.roiPercent || 0.5,

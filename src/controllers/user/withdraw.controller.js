@@ -1,4 +1,4 @@
-
+﻿
 
 import mongoose from "mongoose"
 import { UserModel } from '../../models/user.model.js'
@@ -17,9 +17,11 @@ const GENERAL_API_KEY = process.env.GENERAL_API_KEY;
 const round2 = (v) => Math.round((v + Number.EPSILON) * 100) / 100;
 
 const getWithdrawalSplit = (user, amount) => {
-  const walletDeducted = round2(Math.min(Number(user.walletBalance || 0), amount));
-  const fundDeducted = round2(amount - walletDeducted);
-  return { walletDeducted, fundDeducted };
+  const stakingDeducted = round2(Math.min(Number(user.stakingWallet || 0), amount));
+  const remaining1 = round2(amount - stakingDeducted);
+  const walletDeducted = round2(Math.min(Number(user.walletBalance || 0), remaining1));
+  const fundDeducted = round2(remaining1 - walletDeducted);
+  return { stakingDeducted, walletDeducted, fundDeducted };
 };
 
 const refundWithdrawalAmount = async (withdraw) => {
@@ -54,7 +56,7 @@ export const requestWithdrawal = async (req, res) => {
     const currentUser = req.currentUser; // from auth middleware
     if (!currentUser) return errorResponse(res, "Unauthorized", 401);
 
-    const { amount, coin } = req.body;
+    const { amount, coin, walletSource } = req.body;
     if (!amount || !coin)
       return errorResponse(res, "Amount and coin are required", 400);
 
@@ -88,8 +90,10 @@ export const requestWithdrawal = async (req, res) => {
     const existingPending = await WithdrawModel.findOne({ userId: user._id, status: "pending" });
     if (existingPending) return errorResponse(res, "You already have a pending withdrawal request", 400);
 
-    const withdrawableBalance = round2(Number(user.walletBalance || 0) + Number(user.fundBalance || 0));
-    if (withdrawableBalance < withdrawAmount) {
+    const sourceBalance = walletSource === "staking"
+      ? round2(Number(user.stakingWallet || 0))
+      : round2(Number(user.walletBalance || 0) + Number(user.fundBalance || 0));
+    if (sourceBalance < withdrawAmount) {
       return errorResponse(res, "Insufficient balance", 400);
     }
 
@@ -121,19 +125,16 @@ export const requestWithdrawal = async (req, res) => {
     const serviceCharge = round2(withdrawAmount * serviceChargeRate);
     const payableAmount = round2(withdrawAmount - serviceCharge);
 
-    const { walletDeducted, fundDeducted } = getWithdrawalSplit(user, withdrawAmount);
-
-    user.walletBalance = round2(Number(user.walletBalance || 0) - walletDeducted);
-    user.fundBalance = round2(Number(user.fundBalance || 0) - fundDeducted);
-    if (fundDeducted > 0) {
-      user.fundWalletHistory = user.fundWalletHistory || [];
-      user.fundWalletHistory.push({
-        type: "debit",
-        amount: fundDeducted,
-        note: "Withdrawal request",
-        balanceAfter: user.fundBalance,
-        date: new Date(),
-      });
+    let stakingDeducted=0,walletDeducted=0,fundDeducted=0;
+    if(walletSource==="staking"){
+      stakingDeducted=withdrawAmount;
+      user.stakingWallet=round2(Number(user.stakingWallet||0)-stakingDeducted);
+    }else{
+      const split=getWithdrawalSplit(user,withdrawAmount);
+      walletDeducted=split.walletDeducted;
+      fundDeducted=split.fundDeducted;
+      user.walletBalance=round2(Number(user.walletBalance||0)-walletDeducted);
+      user.fundBalance=round2(Number(user.fundBalance||0)-fundDeducted);
     }
     await user.save();
 
@@ -146,6 +147,7 @@ export const requestWithdrawal = async (req, res) => {
       toAddress,
       serviceCharge,
       payableAmount,
+      stakingDeducted,
       walletDeducted,
       fundDeducted,
       status: "pending",
@@ -306,8 +308,12 @@ export const approveWithdrawal = async (req, res) => {
     }
 
     const { id } = req.params; // withdraw id
+    const paymentMethod = (req.query.paymentMethod || req.body.paymentMethod || 'oxapay').toString().toLowerCase();
 
     if (!id) return errorResponse(res, "Withdraw id required", 400);
+    if (!['oxapay', 'manual'].includes(paymentMethod)) {
+      return errorResponse(res, "Invalid payment method", 400);
+    }
 
     const withdraw = await WithdrawModel.findById(id);
 
@@ -318,6 +324,14 @@ export const approveWithdrawal = async (req, res) => {
       return errorResponse(res, "Request already processed", 400);
     }
 
+    withdraw.paymentMethod = paymentMethod;
+
+    if (paymentMethod === 'manual') {
+      withdraw.status = 'approved';
+      withdraw.remarks = 'Approved manually by admin';
+      await withdraw.save();
+      return successResponse(res, 'Withdrawal approved manually', { withdraw });
+    }
 
     // 🔹 1. Check OxaPay balance before payout
     const balanceData = await checkOxaPayBalance();

@@ -1,4 +1,4 @@
-import axios from "axios";
+﻿import axios from "axios";
 import { DepositModel } from "../../models/deposit.model.js";
 import { UserModel } from "../../models/user.model.js";
 import { successResponse, errorResponse } from "../../utils/api-response.js";
@@ -173,14 +173,7 @@ export const initiatePayment = async (req, res) => {
         balanceAfter: user.fundBalance,
         date: new Date(),
       });
-      user.fundBalance = round2(user.fundBalance + stakingAmount);
-      user.fundWalletHistory.push({
-        type: "credit",
-        amount: stakingAmount,
-        note: `40% staking amount credited from package: ${selectedPackage.title || selectedPackage.code}`,
-        balanceAfter: user.fundBalance,
-        date: new Date(),
-      });
+      user.stakingWallet = round2((user.stakingWallet || 0) + stakingAmount);
       user.totalInvested += packageAmount;
       user.stakingPrincipal += stakingAmount;
       user.roiPercent = planDailyPercent;
@@ -295,15 +288,7 @@ export const oxapayCallback = async (req, res) => {
       const isPackagePayment = existingDeposit.purpose === "package";
       const update = isPackagePayment
         ? {
-            $inc: { totalInvested: packageAmount, stakingPrincipal: stakingAmount, fundBalance: stakingAmount },
-            $push: {
-              fundWalletHistory: {
-                type: "credit",
-                amount: stakingAmount,
-                note: `40% staking amount credited from package: ${existingDeposit.packageTitle || existingDeposit.packageCode || "package"}`,
-                date: new Date(),
-              },
-            },
+            $inc: { totalInvested: packageAmount, stakingPrincipal: stakingAmount, stakingWallet: stakingAmount },
             $set: { isActivated: true, stopROIIncome: false, roiPercent: planDailyPercent }
           }
         : {

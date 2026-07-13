@@ -76,6 +76,7 @@ const userSchema = new mongoose.Schema(
     stakingPrincipal: { type: Number, default: 0, min: 0 },
     roiPercent: { type: Number, default: 0.5, min: 0 },
     referralGiven: { type: Boolean, default: false },
+    stakingWallet: { type: Number, default: 0, min: 0 },
     walletBalance: { type: Number, default: 0, min: 0 },
     fundBalance: { type: Number, default: 0, min: 0 },
    fundWalletHistory: [

@@ -8,7 +8,7 @@ const TempUserSchema = new mongoose.Schema({
   password: String,
   referrerCode: String,
   side: { type: String, enum: ["left", "right"], default: "left" },
-  placementParentId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+  placementParentId: { type: String, default: null },
   otp: String,
   otpExpiry: Date,
   isVerifying: { type: Boolean, default: false },
