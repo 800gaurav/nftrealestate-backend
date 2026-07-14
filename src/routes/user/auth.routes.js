@@ -10,6 +10,7 @@ const router = Router();
 router.post("/send-email-otp", authController.sendEmailOTP);
 router.post("/send-phone-otp", authController.sendPhoneOTP);
 router.post("/register", authController.register);
+router.post("/resolve-user-reference", authController.resolveUserReference);
 router.post("/verify-otp", authController.verifyRegistrationOtp);
 router.post("/login", authController.login);
 router.post('/change-password', currentUser, authController.changePassword);

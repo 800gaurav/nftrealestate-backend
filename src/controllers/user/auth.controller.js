@@ -89,6 +89,36 @@ const authController = {
   },
 
 
+  resolveUserReference: async (req, res) => {
+    try {
+      const { referralCode, placementParentId } = req.body || {};
+      const response = {};
+
+      if (referralCode) {
+        const sponsor = await UserModel.findOne({ referralCode: String(referralCode).trim().toUpperCase() })
+          .select("name userId referralCode");
+
+        response.referral = sponsor
+          ? { name: sponsor.name, userId: sponsor.userId, referralCode: sponsor.referralCode }
+          : { name: null, userId: null, referralCode: null, notFound: true };
+      }
+
+      if (placementParentId) {
+        const placementUser = await UserModel.findOne({ userId: String(placementParentId).trim() })
+          .select("name userId");
+
+        response.placement = placementUser
+          ? { name: placementUser.name, userId: placementUser.userId }
+          : { name: null, userId: null, notFound: true };
+      }
+
+      return successResponse(res, "User reference resolved", response);
+    } catch (error) {
+      console.error("❌ Error in resolveUserReference:", error.message);
+      return errorResponse(res, "Failed to resolve user reference", 500);
+    }
+  },
+
   register: async (req, res) => {
     try {
       const { referrerCode, name, email, phone, password, side = "left", placementParentId } = req.body;
