@@ -18,7 +18,7 @@ export const getUplines = async (userId, maxDepth = 20) => {
 
 export const testCalculateAllRewards = async (req, res) => {
   try {
-    const allUsers = await UserModel.find({ isActivated: true }).select("_id name");
+    const allUsers = await UserModel.find({ isActivated: true, isDemo: { $ne: true } }).select("_id name");
 
     for (const u of allUsers) {
       console.log(`⚡ Checking rewards for: ${u.name || u._id}`);

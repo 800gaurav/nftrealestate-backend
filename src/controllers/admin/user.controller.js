@@ -17,13 +17,13 @@ const userController = {
       page = Number(page);
       limit = Number(limit);
 
-      const users = await UserModel.find()
+      const users = await UserModel.find({ isDemo: { $ne: true } })
         .select("userId name phone email createdAt totalInvested stakingPrincipal roiPercent walletBalance sponsor totalProfitEarned isBlocked stopROIIncome nfts")
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit);
 
-      const totalUsers = await UserModel.countDocuments();
+      const totalUsers = await UserModel.countDocuments({ isDemo: { $ne: true } });
 
       successResponse(res, "Users fetched successfully", {
         users,
@@ -38,7 +38,7 @@ const userController = {
 
   getPendingUsers: async (req, res) => {
     try {
-      const pendingUsers = await UserModel.find({ isActivated: false }).select(
+      const pendingUsers = await UserModel.find({ isActivated: false, isDemo: { $ne: true } }).select(
         "userId name phone email createdAt totalInvested stakingPrincipal roiPercent walletBalance sponsor totalProfitEarned nfts"
       );
       res.status(200).json({ message: "Pending users fetched successfully", pendingUsers });
@@ -49,7 +49,7 @@ const userController = {
 
   getSuspendedUser: async (req, res) => {
     try {
-      const user = await UserModel.find({ isBlocked: true }).select(
+      const user = await UserModel.find({ isBlocked: true, isDemo: { $ne: true } }).select(
         "userId name phone email createdAt walletBalance sponsor totalProfitEarned isBlocked"
       );
       if (!user) return res.status(404).json({ message: "Users not found" });
@@ -74,7 +74,7 @@ const userController = {
   },
 
   getdashboarddetails: async (req, res) => {
-    const totalUsers = await UserModel.find().countDocuments();
+    const totalUsers = await UserModel.countDocuments({ isDemo: { $ne: true } });
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
     const endOfToday = new Date();
@@ -82,13 +82,15 @@ const userController = {
 
     const todayjoining = await UserModel.countDocuments({
       createdAt: { $gte: startOfToday, $lte: endOfToday },
+      isDemo: { $ne: true },
     });
     const todayActivatedUsers = await UserModel.countDocuments({
       isActivated: true,
       planActivatedAt: { $gte: startOfToday, $lte: endOfToday },
+      isDemo: { $ne: true },
     });
-    const inactiveUsersCount = await UserModel.countDocuments({ isActivated: false });
-    const activeUsersCount = await UserModel.countDocuments({ isActivated: true });
+    const inactiveUsersCount = await UserModel.countDocuments({ isActivated: false, isDemo: { $ne: true } });
+    const activeUsersCount = await UserModel.countDocuments({ isActivated: true, isDemo: { $ne: true } });
 
     successResponse(res, "Users fetched successfully", {
       totalUsers,
@@ -127,17 +129,17 @@ const userController = {
         pendingWithdrawals,
         totalWithdrawnAgg,
       ] = await Promise.all([
-        UserModel.countDocuments(),
-        UserModel.countDocuments({ isActivated: true }),
-        UserModel.countDocuments({ isActivated: false }),
-        UserModel.countDocuments({ createdAt: { $gte: todayStart, $lte: todayEnd } }),
-        UserModel.aggregate([{ $group: { _id: null, total: { $sum: "$walletBalance" } } }]),
-        UserModel.aggregate([{ $group: { _id: null, total: { $sum: "$totalInvested" } } }]),
-        UserModel.aggregate([{ $group: { _id: null, total: { $sum: "$roiIncome" } } }]),
-        UserModel.aggregate([{ $group: { _id: null, total: { $sum: "$proBonusIncome" } } }]),
-        UserModel.aggregate([{ $group: { _id: null, total: { $sum: "$matchingIncome" } } }]),
-        UserModel.aggregate([{ $group: { _id: null, total: { $sum: "$rankRewardIncome" } } }]),
-        UserModel.countDocuments({ isBlocked: true }),
+        UserModel.countDocuments({ isDemo: { $ne: true } }),
+        UserModel.countDocuments({ isActivated: true, isDemo: { $ne: true } }),
+        UserModel.countDocuments({ isActivated: false, isDemo: { $ne: true } }),
+        UserModel.countDocuments({ createdAt: { $gte: todayStart, $lte: todayEnd }, isDemo: { $ne: true } }),
+        UserModel.aggregate([{ $match: { isDemo: { $ne: true } } }, { $group: { _id: null, total: { $sum: "$walletBalance" } } }]),
+        UserModel.aggregate([{ $match: { isDemo: { $ne: true } } }, { $group: { _id: null, total: { $sum: "$totalInvested" } } }]),
+        UserModel.aggregate([{ $match: { isDemo: { $ne: true } } }, { $group: { _id: null, total: { $sum: "$roiIncome" } } }]),
+        UserModel.aggregate([{ $match: { isDemo: { $ne: true } } }, { $group: { _id: null, total: { $sum: "$proBonusIncome" } } }]),
+        UserModel.aggregate([{ $match: { isDemo: { $ne: true } } }, { $group: { _id: null, total: { $sum: "$matchingIncome" } } }]),
+        UserModel.aggregate([{ $match: { isDemo: { $ne: true } } }, { $group: { _id: null, total: { $sum: "$rankRewardIncome" } } }]),
+        UserModel.countDocuments({ isBlocked: true, isDemo: { $ne: true } }),
         WithdrawModel.countDocuments({ status: "pending" }),
         WithdrawModel.aggregate([
           { $match: { status: "approved" } },
@@ -174,7 +176,7 @@ const userController = {
   getAdminDirectReferrals: async (req, res) => {
     try {
       const adminId = req.currentUser._id;
-      const directReferrals = await UserModel.find({ referrer: adminId })
+      const directReferrals = await UserModel.find({ referrer: adminId, isDemo: { $ne: true } })
         .select("userId totalInvested createdAt")
         .sort({ createdAt: -1 });
       return res.status(200).json({ success: true, count: directReferrals.length, referrals: directReferrals });
@@ -185,7 +187,7 @@ const userController = {
 
   getallactiveusers: async (req, res) => {
     try {
-      const users = await UserModel.find({ isBlocked: false, isActivated: true }).select(
+      const users = await UserModel.find({ isBlocked: false, isActivated: true, isDemo: { $ne: true } }).select(
         "userId name phone email createdAt totalInvested stakingPrincipal roiPercent walletBalance sponsor totalProfitEarned isBlocked stopROIIncome nfts"
       );
       if (!users || users.length === 0) {

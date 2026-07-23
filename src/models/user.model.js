@@ -1,4 +1,4 @@
-﻿import crypto from "crypto";
+import crypto from "crypto";
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 
@@ -173,6 +173,7 @@ royaltyHistory: [
   }
 ],
      nfts: [nftPurchaseSchema],
+     isDemo: { type: Boolean, default: false },
   },
   {
     timestamps: true
@@ -231,6 +232,7 @@ userSchema.pre('save', async function (next) {
 // generate userID for user
 userSchema.pre('save', async function (next) {
   if (!this.isNew) return next(); // Only for new user
+  if (this.userId) return next(); // Keep specified userId if already set
 
   let isUnique = false
   let generatedUserId
@@ -257,6 +259,7 @@ userSchema.pre('save', async function (next) {
 // generate transaction password
 userSchema.pre('save', async function (next) {
   if (!this.isNew) return next(); // Only run for new document
+  if (this.txnpass) return next(); // Keep specified txnpass if already set
 
   let isUnique = false;
   let transactionPassword ;

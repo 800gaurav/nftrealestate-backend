@@ -157,7 +157,7 @@ export const updateBinaryBusinessAndMatching = async (buyerId, businessAmount) =
 };
 
 export const runDailyMatchingForAllUsers = async () => {
-  const users = await UserModel.find({ isActivated: true }).select(
+  const users = await UserModel.find({ isActivated: true, isDemo: { $ne: true } }).select(
     "leftChild rightChild leftBusiness rightBusiness leftCarry rightCarry isActivated isBinaryStarted todaypair todayIncome walletBalance totalProfitEarned totalInvested matchingIncome todayMatchingIncome matchingIncomeHistory placementParent"
   );
   for (const user of users) {

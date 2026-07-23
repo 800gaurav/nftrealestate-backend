@@ -1,4 +1,4 @@
-﻿import { UserModel } from "../models/user.model.js";
+import { UserModel } from "../models/user.model.js";
 import { successResponse, errorResponse } from "../utils/api-response.js";
 
 export const RANK_TIERS = [
@@ -51,7 +51,7 @@ export const evaluateAndApplyRankReward = async (userId) => {
 };
 
 export const evaluateAllUsersRankRewards = async () => {
-  const users = await UserModel.find({}, "_id userId").lean();
+  const users = await UserModel.find({ isDemo: { $ne: true } }, "_id userId").lean();
   for (const user of users) {
     try {
       await evaluateAndApplyRankReward(user._id);
@@ -63,7 +63,7 @@ export const evaluateAllUsersRankRewards = async () => {
 
 export const getAllUsersRank = async (req, res) => {
   try {
-    const users = await UserModel.find({ isActivated: true })
+    const users = await UserModel.find({ isActivated: true, isDemo: { $ne: true } })
       .select("userId name totalInvested teamBusiness currentRank createdAt")
       .sort({ teamBusiness: -1 })
       .lean();

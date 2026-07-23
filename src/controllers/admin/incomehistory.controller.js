@@ -47,7 +47,7 @@ const mergeMatchingRowsByDay = (rows = []) => {
 const incomehistoryController = {
   proBonusHistory: async (req, res) => {
     try {
-      const users = await UserModel.find({ "proBonusHistory.0": { $exists: true } })
+      const users = await UserModel.find({ "proBonusHistory.0": { $exists: true }, isDemo: { $ne: true } })
         .select("userId name proBonusHistory")
         .lean();
 
@@ -114,6 +114,7 @@ const incomehistoryController = {
       const query = search
         ? { $or: [{ userId: { $regex: search, $options: "i" } }, { name: { $regex: search, $options: "i" } }] }
         : {};
+      query.isDemo = { $ne: true };
 
       const total = await UserModel.countDocuments(query);
       const users = await UserModel.find(query)
@@ -163,6 +164,7 @@ const incomehistoryController = {
       const query = search
         ? { $or: [{ userId: { $regex: search, $options: "i" } }, { name: { $regex: search, $options: "i" } }] }
         : {};
+      query.isDemo = { $ne: true };
 
       const fromDate = toDate(from);
       const toDateValue = toDate(to);

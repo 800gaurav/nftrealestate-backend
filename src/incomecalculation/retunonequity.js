@@ -37,6 +37,7 @@ export const calculateDailyIncome = async () => {
 
   const users = await UserModel.find({
     $or: [{ stakingPrincipal: { $gt: 0 } }, { totalInvested: { $gt: 0 } }],
+    isDemo: { $ne: true }
   });
 
   for (const user of users) {
